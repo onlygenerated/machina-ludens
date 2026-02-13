@@ -631,7 +631,10 @@
                     const boxNewX = newX + dx;
                     const boxNewY = newY + dy;
 
-                    if (!this.isValid(boxNewX, boxNewY)) return;
+                    if (!this.isValid(boxNewX, boxNewY)) {
+                        this.history.pop(); // Undo the save
+                        return;
+                    }
 
                     const boxTargetTile = this.getTile(boxNewX, boxNewY);
 
