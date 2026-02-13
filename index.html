@@ -36,9 +36,10 @@
 
         #game-container {
             background: #2a2a2a;
-            padding: 30px;
+            padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            max-width: 100%;
         }
 
         #canvas {
@@ -46,6 +47,83 @@
             background: #1a1a1a;
             border: 2px solid #444;
             image-rendering: pixelated;
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
+        }
+
+        #touch-controls {
+            display: none;
+            margin-top: 20px;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: 60px 60px 60px;
+            grid-template-rows: 60px 60px 60px;
+            gap: 5px;
+        }
+
+        .dpad-btn {
+            background: #3a3a3a;
+            border: 2px solid #555;
+            color: #e0e0e0;
+            font-size: 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: manipulation;
+        }
+
+        .dpad-btn:active {
+            background: #4a4a4a;
+            border-color: #777;
+        }
+
+        .dpad-up { grid-column: 2; grid-row: 1; }
+        .dpad-down { grid-column: 2; grid-row: 3; }
+        .dpad-left { grid-column: 1; grid-row: 2; }
+        .dpad-right { grid-column: 3; grid-row: 2; }
+        .dpad-center { grid-column: 2; grid-row: 2; opacity: 0; pointer-events: none; }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            #game-container {
+                padding: 15px;
+            }
+
+            #touch-controls {
+                display: flex;
+            }
+
+            button {
+                padding: 10px 14px;
+                font-size: 0.9em;
+            }
+
+            #controls {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                justify-content: center;
+            }
+
+            .instructions {
+                font-size: 0.75em;
+            }
         }
 
         #controls {
@@ -111,15 +189,25 @@
 
         <div id="win-message"></div>
 
+        <div id="touch-controls">
+            <div class="dpad">
+                <div class="dpad-btn dpad-up" ontouchstart="game.handleTouch(0, -1)" ontouchend="event.preventDefault()">⬆</div>
+                <div class="dpad-btn dpad-left" ontouchstart="game.handleTouch(-1, 0)" ontouchend="event.preventDefault()">⬅</div>
+                <div class="dpad-center"></div>
+                <div class="dpad-btn dpad-right" ontouchstart="game.handleTouch(1, 0)" ontouchend="event.preventDefault()">➡</div>
+                <div class="dpad-btn dpad-down" ontouchstart="game.handleTouch(0, 1)" ontouchend="event.preventDefault()">⬇</div>
+            </div>
+        </div>
+
         <div id="controls">
-            <button onclick="game.undo()">↶ Undo (Z)</button>
-            <button onclick="game.reset()">⟲ Reset (R)</button>
-            <button onclick="game.nextLevel()">Next Level (N)</button>
+            <button onclick="game.undo()">↶ Undo</button>
+            <button onclick="game.reset()">⟲ Reset</button>
+            <button onclick="game.nextLevel()">Next</button>
         </div>
     </div>
 
     <div class="instructions">
-        Use Arrow Keys or WASD to move • Push all 📦 onto 🎯 to win
+        Use Arrow Keys, WASD, or touch controls • Push all 📦 onto 🎯 to win
     </div>
 
     <script>
@@ -230,7 +318,49 @@
 
                 this.loadLevel(0);
                 this.setupControls();
+                this.setupTouchGestures();
                 this.render();
+            }
+
+            handleTouch(dx, dy) {
+                if (this.won) return;
+                this.move(dx, dy);
+            }
+
+            setupTouchGestures() {
+                let touchStartX = 0;
+                let touchStartY = 0;
+                const minSwipeDistance = 30;
+
+                this.canvas.addEventListener('touchstart', (e) => {
+                    const touch = e.touches[0];
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    e.preventDefault();
+                }, { passive: false });
+
+                this.canvas.addEventListener('touchend', (e) => {
+                    if (this.won) return;
+
+                    const touch = e.changedTouches[0];
+                    const deltaX = touch.clientX - touchStartX;
+                    const deltaY = touch.clientY - touchStartY;
+
+                    const absX = Math.abs(deltaX);
+                    const absY = Math.abs(deltaY);
+
+                    if (absX < minSwipeDistance && absY < minSwipeDistance) {
+                        return;
+                    }
+
+                    if (absX > absY) {
+                        this.move(deltaX > 0 ? 1 : -1, 0);
+                    } else {
+                        this.move(0, deltaY > 0 ? 1 : -1);
+                    }
+
+                    e.preventDefault();
+                }, { passive: false });
             }
 
             loadLevel(levelNum) {
