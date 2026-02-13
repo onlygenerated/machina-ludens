@@ -283,9 +283,11 @@
         <div id="win-message"></div>
 
         <div id="rating-panel">
-            <h3>Rate this level</h3>
-            <div id="genome-info" style="margin-bottom: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.85em; color: #aaa; text-align: center;">
-                Grid: - | Boxes: - | Complexity: - | Wall Density: -
+            <div id="bot-presentation" style="text-align: center; margin-bottom: 15px;">
+                <canvas id="bot-sprite" width="80" height="80" style="display: block; margin: 10px auto; border-radius: 50%; background: #1a1a1a;"></canvas>
+                <h3 id="bot-name" style="margin: 5px 0; color: #e0e0e0; font-size: 1.1em;">-</h3>
+                <p id="bot-personality" style="margin: 5px 0; color: #888; font-size: 0.85em; font-style: italic;">-</p>
+                <p style="margin: 10px 0 5px 0; color: #666; font-size: 0.9em;">Rate this puzzle:</p>
             </div>
             <div class="rating-stars">
                 <button class="star-btn" onclick="game.rateCurrentLevel(1)">★</button>
@@ -418,8 +420,8 @@
 
                 // Breeding mode state
                 this.population = new Population(5); // Start with initial population
-                this.currentGenome = null; // Currently playing genome
-                this.ratedGenomes = []; // Track rated genomes with their scores
+                this.currentBot = null; // Currently playing bot
+                this.ratedBots = []; // Track rated bots with their scores
                 this.currentLevelRating = 0;
                 this.generationHistory = []; // Track stats over generations
 
@@ -514,10 +516,13 @@
             generateLevel() {
                 // Pick a random genome from current population
                 const genomes = this.population.getCurrentGeneration();
-                this.currentGenome = genomes[Math.floor(Math.random() * genomes.length)];
+                const randomGenome = genomes[Math.floor(Math.random() * genomes.length)];
 
-                // Generate level from this genome
-                const generatedLevel = this.currentGenome.generateLevel();
+                // Wrap in a Bot for personality
+                this.currentBot = new Bot(randomGenome);
+
+                // Generate level from this bot's genome
+                const generatedLevel = this.currentBot.generateLevel();
 
                 // Load it as a custom level
                 this.currentLevel = -1; // Mark as generated
@@ -539,7 +544,7 @@
                 this.updateUI();
                 this.render();
                 this.updateRatingDisplay();
-                this.updateGenomeDisplay();
+                this.updateBotDisplay();
             }
 
             setupControls() {
@@ -718,16 +723,17 @@
             // === BREEDING MODE METHODS ===
 
             rateCurrentLevel(rating) {
-                if (!this.currentGenome) {
+                if (!this.currentBot) {
                     alert('Generate a level first!');
                     return;
                 }
 
                 this.currentLevelRating = rating;
 
-                // Store this rating
-                this.ratedGenomes.push({
-                    genome: this.currentGenome,
+                // Store this rating (store genome for breeding compatibility)
+                this.ratedBots.push({
+                    bot: this.currentBot,
+                    genome: this.currentBot.genome,
                     rating: rating
                 });
 
@@ -738,7 +744,7 @@
                 this.updateGenerationDisplay();
 
                 // Show breed button if we have enough ratings
-                if (this.ratedGenomes.length >= 3) {
+                if (this.ratedBots.length >= 3) {
                     document.getElementById('breed-btn').classList.add('visible');
                 }
             }
@@ -756,21 +762,23 @@
 
             updateGenerationDisplay() {
                 const display = document.getElementById('generation-display');
-                display.textContent = `Generation: ${this.population.generation} | Rated: ${this.ratedGenomes.length}`;
+                display.textContent = `Generation: ${this.population.generation} | Rated: ${this.ratedBots.length}`;
             }
 
-            updateGenomeDisplay() {
-                if (!this.currentGenome) return;
+            updateBotDisplay() {
+                if (!this.currentBot) return;
 
-                const genes = this.currentGenome.genes;
-                const display = document.getElementById('genome-info');
-                display.innerHTML = `
-                    <strong>Current Level Genome:</strong><br>
-                    Grid: ${genes.gridSize}x${genes.gridSize} |
-                    Boxes: ${genes.boxCount} |
-                    Complexity: ${genes.complexity} |
-                    Wall Density: ${(genes.wallDensity * 100).toFixed(0)}%
-                `;
+                // Update bot name
+                document.getElementById('bot-name').textContent = this.currentBot.name;
+
+                // Update personality
+                document.getElementById('bot-personality').textContent = this.currentBot.personality;
+
+                // Draw bot sprite
+                const canvas = document.getElementById('bot-sprite');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                this.currentBot.drawSprite(ctx, 40, 40, 70);
             }
 
             updatePopulationStats() {
@@ -825,7 +833,7 @@
                     localStorage.removeItem('machinaLudensState');
                     this.population = new Population(5);
                     this.generationHistory = [];
-                    this.ratedGenomes = [];
+                    this.ratedBots = [];
                     this.currentLevelRating = 0;
                     this.updateGenerationDisplay();
                     this.updatePopulationStats();
@@ -936,7 +944,7 @@
 
                         this.population = Population.fromJSON(data.population);
                         this.generationHistory = data.generationHistory;
-                        this.ratedGenomes = [];
+                        this.ratedBots = [];
                         this.currentLevelRating = 0;
 
                         this.saveState(); // Save to localStorage
@@ -958,7 +966,7 @@
             }
 
             breedNextGeneration() {
-                if (this.ratedGenomes.length < 3) {
+                if (this.ratedBots.length < 3) {
                     alert('Rate at least 3 levels before breeding!');
                     return;
                 }
@@ -966,12 +974,12 @@
                 // Build fitness array for current population
                 // For genomes that were rated, use those ratings
                 // For unrated genomes, use average rating
-                const avgRating = this.ratedGenomes.reduce((sum, r) => sum + r.rating, 0) / this.ratedGenomes.length;
+                const avgRating = this.ratedBots.reduce((sum, r) => sum + r.rating, 0) / this.ratedBots.length;
 
                 const genomes = this.population.getCurrentGeneration();
                 const fitnessScores = genomes.map(genome => {
                     // Find rating for this genome
-                    const rated = this.ratedGenomes.find(r => r.genome === genome);
+                    const rated = this.ratedBots.find(r => r.genome === genome);
                     return rated ? rated.rating : avgRating * 0.5; // Unrated get half of average
                 });
 
@@ -981,8 +989,8 @@
                 // Save generation history
                 this.saveGenerationHistory();
 
-                // Reset rated genomes for new generation
-                this.ratedGenomes = [];
+                // Reset rated bots for new generation
+                this.ratedBots = [];
                 this.currentLevelRating = 0;
                 this.updateRatingDisplay();
                 this.updateGenerationDisplay();

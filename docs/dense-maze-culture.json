@@ -1,0 +1,225 @@
+{
+  "experimentName": "Dense-Maze-Culture",
+  "population": {
+    "genomes": [
+      {
+        "genes": {
+          "gridSize": 10,
+          "boxCount": 4,
+          "complexity": 39,
+          "wallDensity": 0.19681463450380227
+        }
+      },
+      {
+        "genes": {
+          "gridSize": 10,
+          "boxCount": 6,
+          "complexity": 30,
+          "wallDensity": 0.17645831770412107
+        }
+      },
+      {
+        "genes": {
+          "gridSize": 11,
+          "boxCount": 6,
+          "complexity": 34,
+          "wallDensity": 0.17645831770412107
+        }
+      },
+      {
+        "genes": {
+          "gridSize": 11,
+          "boxCount": 4,
+          "complexity": 34,
+          "wallDensity": 0.17645831770412107
+        }
+      },
+      {
+        "genes": {
+          "gridSize": 11,
+          "boxCount": 5,
+          "complexity": 34,
+          "wallDensity": 0.15
+        }
+      }
+    ],
+    "generation": 3,
+    "history": [
+      {
+        "generation": 0,
+        "avgFitness": 3.3777777777777778,
+        "maxFitness": 5,
+        "genomes": [
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 6,
+              "complexity": 40,
+              "wallDensity": 0.06008871955275974
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 12,
+              "boxCount": 3,
+              "complexity": 39,
+              "wallDensity": 0.23084226531566948
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 5,
+              "complexity": 39,
+              "wallDensity": 0.19681463450380227
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 3,
+              "complexity": 30,
+              "wallDensity": 0.17645831770412107
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 5,
+              "complexity": 36,
+              "wallDensity": 0.08968162258232436
+            }
+          }
+        ]
+      },
+      {
+        "generation": 1,
+        "avgFitness": 2.6454545454545455,
+        "maxFitness": 5,
+        "genomes": [
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 5,
+              "complexity": 39,
+              "wallDensity": 0.19681463450380227
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 4,
+              "complexity": 39,
+              "wallDensity": 0.06008871955275974
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 6,
+              "complexity": 30,
+              "wallDensity": 0.17645831770412107
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 6,
+              "complexity": 40,
+              "wallDensity": 0.06008871955275974
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 3,
+              "complexity": 39,
+              "wallDensity": 0.17645831770412107
+            }
+          }
+        ]
+      },
+      {
+        "generation": 2,
+        "avgFitness": 3.6,
+        "maxFitness": 5,
+        "genomes": [
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 6,
+              "complexity": 30,
+              "wallDensity": 0.17645831770412107
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 4,
+              "complexity": 39,
+              "wallDensity": 0.19681463450380227
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 6,
+              "complexity": 34,
+              "wallDensity": 0.17645831770412107
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 11,
+              "boxCount": 6,
+              "complexity": 30,
+              "wallDensity": 0.15
+            }
+          },
+          {
+            "genes": {
+              "gridSize": 10,
+              "boxCount": 6,
+              "complexity": 35,
+              "wallDensity": 0.17645831770412107
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "generationHistory": [
+    {
+      "generation": 1,
+      "timestamp": 1770998840949,
+      "averages": {
+        "gridSize": "10.4",
+        "boxCount": "4.8",
+        "complexity": "37.4",
+        "wallDensity": "13.4%"
+      }
+    },
+    {
+      "generation": 2,
+      "timestamp": 1770998890069,
+      "averages": {
+        "gridSize": "10.4",
+        "boxCount": "5.6",
+        "complexity": "33.6",
+        "wallDensity": "17.5%"
+      }
+    },
+    {
+      "generation": 3,
+      "timestamp": 1770998929877,
+      "averages": {
+        "gridSize": "10.6",
+        "boxCount": "5.0",
+        "complexity": "34.2",
+        "wallDensity": "17.5%"
+      }
+    }
+  ],
+  "savedDate": "2026-02-13T16:09:14.334Z",
+  "currentGeneration": 3
+}
