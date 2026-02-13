@@ -613,16 +613,24 @@
             }
 
             move(dx, dy) {
+                console.log('move() called with dx:', dx, 'dy:', dy);
                 const newX = this.playerX + dx;
                 const newY = this.playerY + dy;
 
-                if (!this.isValid(newX, newY)) return;
+                if (!this.isValid(newX, newY)) {
+                    console.log('Invalid position, returning');
+                    return;
+                }
 
                 const targetTile = this.getTile(newX, newY);
 
                 // Hit a wall
-                if (targetTile === TILES.WALL) return;
+                if (targetTile === TILES.WALL) {
+                    console.log('Hit a wall, returning');
+                    return;
+                }
 
+                console.log('About to save state...');
                 // Save state for undo
                 this.saveState();
 
