@@ -140,8 +140,74 @@ class SokobanGenerator {
         const x = boxPos % this.width;
         const y = Math.floor(boxPos / this.width);
 
-        // Check for corner deadlock
-        return this.isCornerOrWall(grid, x, y);
+        // Check for corner deadlock (box trapped in corner)
+        if (this.isCornerOrWall(grid, x, y)) return true;
+
+        // Check for freeze deadlock (box against wall with no path to target along wall)
+        if (this.isFreezeDeadlock(grid, x, y, targets)) return true;
+
+        return false;
+    }
+
+    isFreezeDeadlock(grid, x, y, targets) {
+        // A box is freeze-deadlocked if it's against a wall and can't reach
+        // a target by sliding along that wall
+
+        const up = grid[(y - 1) * this.width + x];
+        const down = grid[(y + 1) * this.width + x];
+        const left = grid[y * this.width + (x - 1)];
+        const right = grid[y * this.width + (x + 1)];
+
+        // Check if against a horizontal wall (top or bottom)
+        if (up === this.TILES.WALL || down === this.TILES.WALL) {
+            // Can only move left or right along this wall
+            // Check if any target is reachable horizontally from this row
+            const canReachTarget = targets.some(target => {
+                const tx = target % this.width;
+                const ty = Math.floor(target / this.width);
+                // Must be same row and path must be clear
+                if (ty !== y) return false;
+
+                // Check horizontal path between box and target
+                const minX = Math.min(x, tx);
+                const maxX = Math.max(x, tx);
+                for (let checkX = minX; checkX <= maxX; checkX++) {
+                    const tile = grid[y * this.width + checkX];
+                    if (tile === this.TILES.WALL) return false;
+                }
+                return true;
+            });
+
+            if (!canReachTarget && (left === this.TILES.WALL || right === this.TILES.WALL)) {
+                return true; // Deadlock: against wall with no horizontal path
+            }
+        }
+
+        // Check if against a vertical wall (left or right)
+        if (left === this.TILES.WALL || right === this.TILES.WALL) {
+            // Can only move up or down along this wall
+            const canReachTarget = targets.some(target => {
+                const tx = target % this.width;
+                const ty = Math.floor(target / this.width);
+                // Must be same column
+                if (tx !== x) return false;
+
+                // Check vertical path between box and target
+                const minY = Math.min(y, ty);
+                const maxY = Math.max(y, ty);
+                for (let checkY = minY; checkY <= maxY; checkY++) {
+                    const tile = grid[checkY * this.width + x];
+                    if (tile === this.TILES.WALL) return false;
+                }
+                return true;
+            });
+
+            if (!canReachTarget && (up === this.TILES.WALL || down === this.TILES.WALL)) {
+                return true; // Deadlock: against wall with no vertical path
+            }
+        }
+
+        return false;
     }
 
     placePlayerNearBoxes(grid, boxes) {
