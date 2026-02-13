@@ -613,31 +613,18 @@
             }
 
             move(dx, dy) {
-                console.log('move() called with dx:', dx, 'dy:', dy);
                 const newX = this.playerX + dx;
                 const newY = this.playerY + dy;
 
-                if (!this.isValid(newX, newY)) {
-                    console.log('Invalid position, returning');
-                    return;
-                }
+                if (!this.isValid(newX, newY)) return;
 
                 const targetTile = this.getTile(newX, newY);
 
                 // Hit a wall
-                if (targetTile === TILES.WALL) {
-                    console.log('Hit a wall, returning');
-                    return;
-                }
+                if (targetTile === TILES.WALL) return;
 
-                console.log('About to save state...');
                 // Save state for undo
-                try {
-                    this.saveState();
-                    console.log('saveState() completed successfully');
-                } catch (error) {
-                    console.error('Error in saveState():', error);
-                }
+                this.saveState();
 
                 // Check if pushing a box
                 if (targetTile === TILES.BOX || targetTile === TILES.BOX_ON_TARGET) {
@@ -684,14 +671,9 @@
             }
 
             undo() {
-                console.log('Undo called. History length:', this.history.length);
-                if (this.history.length === 0) {
-                    console.log('No moves to undo');
-                    return;
-                }
+                if (this.history.length === 0) return;
 
                 const state = this.history.pop();
-                console.log('Restoring state:', state);
                 this.grid = [...state.grid]; // Make sure to copy the array
                 this.playerX = state.playerX;
                 this.playerY = state.playerY;
@@ -699,7 +681,6 @@
                 this.pushes = state.pushes;
                 this.won = false; // Reset win state when undoing
 
-                console.log('After undo - moves:', this.moves, 'pushes:', this.pushes);
                 this.updateUI();
                 this.render();
 
@@ -715,7 +696,6 @@
                     moves: this.moves,
                     pushes: this.pushes
                 });
-                console.log('Saved state. History length:', this.history.length);
             }
 
             isValid(x, y) {
