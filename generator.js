@@ -85,6 +85,13 @@ class SokobanGenerator {
             }
         }
 
+        // Step 7b: Validate no boxes are on targets (we want an unsolved puzzle)
+        for (const box of state.boxes) {
+            if (targets.includes(box)) {
+                return null; // Box still on target, try again
+            }
+        }
+
         // Step 8: Build final grid
         // Targets: original positions (fixed)
         // Boxes: scattered positions from reverse-play

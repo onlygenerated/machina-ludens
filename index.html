@@ -401,10 +401,11 @@
                 this.ratedGenomes = []; // Track rated genomes with their scores
                 this.currentLevelRating = 0;
 
-                this.loadLevel(0);
                 this.setupControls();
                 this.setupTouchGestures();
-                this.render();
+
+                // Generate first level automatically
+                this.generateLevel();
             }
 
             handleTouch(dx, dy) {
