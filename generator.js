@@ -6,7 +6,7 @@ class SokobanGenerator {
         this.width = width;
         this.height = height;
         this.boxCount = boxCount;
-        this.complexity = complexity; // Number of reverse moves to make
+        this.complexity = complexity;
 
         this.TILES = {
             FLOOR: 0,
@@ -19,102 +19,145 @@ class SokobanGenerator {
     }
 
     generate() {
-        // Step 1: Create empty room with walls
-        const grid = this.createEmptyRoom();
+        // Keep trying until we get a valid level
+        let attempts = 0;
+        while (attempts < 50) {
+            try {
+                const result = this.attemptGenerate();
+                if (result) return result;
+            } catch (e) {
+                // Try again
+            }
+            attempts++;
+        }
 
-        // Step 2: Place targets randomly
-        const targets = this.placeTargets(grid);
+        // Fallback: return a simple level
+        return this.createSimpleFallback();
+    }
+
+    attemptGenerate() {
+        // Step 1: Create simple room (no internal walls for now)
+        const grid = this.createSimpleRoom();
+
+        // Step 2: Place targets in safe positions (not corners)
+        const targets = this.placeSafeTargets(grid);
+        if (targets.length === 0) return null;
 
         // Step 3: Place boxes on targets (solved state)
         const boxes = [...targets];
 
-        // Step 4: Place player near boxes
-        let playerPos = this.placePlayer(grid, boxes);
+        // Step 4: Place player adjacent to a box
+        let playerPos = this.placePlayerNearBoxes(grid, boxes);
+        if (playerPos === -1) return null;
 
-        // Step 5: Perform reverse moves to scramble boxes
+        // Step 5: Perform reverse moves to scramble
         const state = this.reversePlay(grid, boxes, playerPos, targets);
 
-        // Step 6: Build final grid
+        // Step 6: Validate no boxes are in deadlocks
+        for (const box of state.boxes) {
+            if (this.isDeadlock(state.grid, box, targets)) {
+                return null; // Invalid, try again
+            }
+        }
+
+        // Step 7: Build final grid
         return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
     }
 
-    createEmptyRoom() {
+    createSimpleRoom() {
         const grid = [];
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                // Create walls around perimeter
+                // Only walls on perimeter
                 if (x === 0 || x === this.width - 1 ||
                     y === 0 || y === this.height - 1) {
                     grid.push(this.TILES.WALL);
                 } else {
-                    // Add some internal walls for complexity (20% chance)
-                    grid.push(Math.random() < 0.2 ? this.TILES.WALL : this.TILES.FLOOR);
+                    grid.push(this.TILES.FLOOR);
                 }
             }
         }
         return grid;
     }
 
-    placeTargets(grid) {
+    placeSafeTargets(grid) {
         const targets = [];
-        const floorTiles = [];
+        const safeTiles = [];
 
-        // Find all floor tiles
-        for (let i = 0; i < grid.length; i++) {
-            if (grid[i] === this.TILES.FLOOR) {
-                floorTiles.push(i);
+        // Find floor tiles that aren't in corners or against walls
+        for (let y = 2; y < this.height - 2; y++) {
+            for (let x = 2; x < this.width - 2; x++) {
+                const idx = y * this.width + x;
+                if (grid[idx] === this.TILES.FLOOR) {
+                    // Check it's not a corner or against a wall
+                    if (!this.isCornerOrWall(grid, x, y)) {
+                        safeTiles.push(idx);
+                    }
+                }
             }
         }
 
-        // Shuffle and pick first N floor tiles as targets
-        this.shuffle(floorTiles);
+        // Shuffle and pick targets
+        this.shuffle(safeTiles);
+        const count = Math.min(this.boxCount, safeTiles.length);
 
-        for (let i = 0; i < Math.min(this.boxCount, floorTiles.length); i++) {
-            targets.push(floorTiles[i]);
-            grid[floorTiles[i]] = this.TILES.TARGET;
+        for (let i = 0; i < count; i++) {
+            targets.push(safeTiles[i]);
+            grid[safeTiles[i]] = this.TILES.TARGET;
         }
 
         return targets;
     }
 
-    placePlayer(grid, boxes) {
-        // Find floor tiles adjacent to boxes
+    isCornerOrWall(grid, x, y) {
+        // Check if position has walls in perpendicular directions (corner)
+        const up = grid[(y - 1) * this.width + x];
+        const down = grid[(y + 1) * this.width + x];
+        const left = grid[y * this.width + (x - 1)];
+        const right = grid[y * this.width + (x + 1)];
+
+        // Corner if walls on two adjacent sides
+        if ((up === this.TILES.WALL && left === this.TILES.WALL)) return true;
+        if ((up === this.TILES.WALL && right === this.TILES.WALL)) return true;
+        if ((down === this.TILES.WALL && left === this.TILES.WALL)) return true;
+        if ((down === this.TILES.WALL && right === this.TILES.WALL)) return true;
+
+        return false;
+    }
+
+    isDeadlock(grid, boxPos, targets) {
+        // If box is on target, not a deadlock
+        if (targets.includes(boxPos)) return false;
+
+        const x = boxPos % this.width;
+        const y = Math.floor(boxPos / this.width);
+
+        // Check for corner deadlock
+        return this.isCornerOrWall(grid, x, y);
+    }
+
+    placePlayerNearBoxes(grid, boxes) {
         const candidates = [];
 
-        for (let i = 0; i < grid.length; i++) {
-            if (grid[i] === this.TILES.FLOOR || grid[i] === this.TILES.TARGET) {
-                const x = i % this.width;
-                const y = Math.floor(i / this.width);
+        for (const box of boxes) {
+            const x = box % this.width;
+            const y = Math.floor(box / this.width);
+            const adjacent = this.getAdjacentPositions(x, y);
 
-                // Check if adjacent to any box
-                const adjacent = this.getAdjacentPositions(x, y);
-                const nearBox = adjacent.some(pos => boxes.includes(pos));
-
-                if (nearBox) {
-                    candidates.push(i);
+            for (const pos of adjacent) {
+                const tile = grid[pos];
+                if ((tile === this.TILES.FLOOR || tile === this.TILES.TARGET) &&
+                    !boxes.includes(pos)) {
+                    candidates.push(pos);
                 }
             }
         }
 
-        // Pick random candidate, or any floor tile if none found
-        if (candidates.length > 0) {
-            return candidates[Math.floor(Math.random() * candidates.length)];
-        }
-
-        // Fallback: any floor tile
-        for (let i = 0; i < grid.length; i++) {
-            if (grid[i] === this.TILES.FLOOR || grid[i] === this.TILES.TARGET) {
-                return i;
-            }
-        }
-
-        return -1;
+        if (candidates.length === 0) return -1;
+        return candidates[Math.floor(Math.random() * candidates.length)];
     }
 
     reversePlay(grid, boxes, playerPos, targets) {
-        // Simulate game in reverse: pull boxes instead of push
-        // This guarantees the final state is solvable
-
         const state = {
             grid: [...grid],
             boxes: [...boxes],
@@ -122,50 +165,53 @@ class SokobanGenerator {
         };
 
         const moves = [
-            [0, -1], // up
-            [0, 1],  // down
-            [-1, 0], // left
-            [1, 0]   // right
+            [0, -1],  // up
+            [0, 1],   // down
+            [-1, 0],  // left
+            [1, 0]    // right
         ];
 
-        for (let step = 0; step < this.complexity; step++) {
-            // Pick a random box
+        let successfulMoves = 0;
+
+        for (let step = 0; step < this.complexity * 3 && successfulMoves < this.complexity; step++) {
+            // Pick random box
             const boxIdx = Math.floor(Math.random() * state.boxes.length);
             const boxPos = state.boxes[boxIdx];
             const boxX = boxPos % this.width;
             const boxY = Math.floor(boxPos / this.width);
 
-            // Try to pull it in a random direction
             this.shuffle(moves);
 
             for (const [dx, dy] of moves) {
-                // Player would need to be on opposite side of box
-                const playerX = boxX - dx;
-                const playerY = boxY - dy;
-                const newPlayerPos = playerY * this.width + playerX;
-
-                // New box position (pulled toward player)
+                // New box position (where box will be pulled to)
                 const newBoxX = boxX + dx;
                 const newBoxY = boxY + dy;
                 const newBoxPos = newBoxY * this.width + newBoxX;
 
-                // Check if move is valid
-                if (!this.isValidPosition(playerX, playerY)) continue;
+                // Player needs to be opposite of pull direction
+                const playerX = boxX - dx;
+                const playerY = boxY - dy;
+                const newPlayerPos = playerY * this.width + playerX;
+
+                // Validate positions
                 if (!this.isValidPosition(newBoxX, newBoxY)) continue;
+                if (!this.isValidPosition(playerX, playerY)) continue;
 
-                const playerTile = state.grid[newPlayerPos];
                 const newBoxTile = state.grid[newBoxPos];
+                const playerTile = state.grid[newPlayerPos];
 
-                // Player position must be walkable
+                // Check if move is valid
                 if (playerTile === this.TILES.WALL) continue;
-
-                // New box position must be walkable and not occupied by another box
                 if (newBoxTile === this.TILES.WALL) continue;
                 if (state.boxes.includes(newBoxPos)) continue;
 
-                // Valid reverse move! Apply it
+                // Check new box position isn't a deadlock
+                if (this.isDeadlock(state.grid, newBoxPos, targets)) continue;
+
+                // Valid move!
                 state.boxes[boxIdx] = newBoxPos;
                 state.playerPos = boxPos; // Player moves to where box was
+                successfulMoves++;
                 break;
             }
         }
@@ -174,12 +220,13 @@ class SokobanGenerator {
     }
 
     buildFinalGrid(grid, boxes, playerPos, targets) {
-        const finalGrid = [...grid];
+        const finalGrid = [];
 
-        // Clear targets from grid (we'll track them separately)
-        for (let i = 0; i < finalGrid.length; i++) {
-            if (finalGrid[i] === this.TILES.TARGET) {
-                finalGrid[i] = this.TILES.FLOOR;
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] === this.TILES.TARGET) {
+                finalGrid.push(this.TILES.FLOOR);
+            } else {
+                finalGrid.push(grid[i]);
             }
         }
 
@@ -194,10 +241,9 @@ class SokobanGenerator {
             finalGrid[box] = isOnTarget ? this.TILES.BOX_ON_TARGET : this.TILES.BOX;
         }
 
-        // Place player
+        // Mark player tile (keep target visible if on target)
         const playerOnTarget = targets.includes(playerPos);
         if (playerOnTarget) {
-            // Keep target visible under player
             finalGrid[playerPos] = this.TILES.TARGET;
         } else {
             finalGrid[playerPos] = this.TILES.PLAYER;
@@ -209,6 +255,25 @@ class SokobanGenerator {
             grid: finalGrid,
             playerX: playerPos % this.width,
             playerY: Math.floor(playerPos / this.width)
+        };
+    }
+
+    createSimpleFallback() {
+        // Simple 7x7 level as fallback
+        return {
+            width: 7,
+            height: 7,
+            grid: [
+                1,1,1,1,1,1,1,
+                1,0,0,0,0,0,1,
+                1,0,0,3,0,0,1,
+                1,0,0,0,0,0,1,
+                1,0,4,0,2,0,1,
+                1,0,0,0,0,0,1,
+                1,1,1,1,1,1,1
+            ],
+            playerX: 2,
+            playerY: 4
         };
     }
 
@@ -232,7 +297,6 @@ class SokobanGenerator {
     }
 
     shuffle(array) {
-        // Fisher-Yates shuffle
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [array[i], array[j]] = [array[j], array[i]];
