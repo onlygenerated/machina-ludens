@@ -149,6 +149,33 @@ class SokobanGenerator {
         return false;
     }
 
+    isBoxAccessible(grid, boxPos, otherBoxes, targets) {
+        // Check if a box position allows the player to access it from enough sides
+        // to potentially push it toward any target
+
+        const x = boxPos % this.width;
+        const y = Math.floor(boxPos / this.width);
+
+        // Count how many sides are accessible (not wall, not other box)
+        const up = (y - 1) * this.width + x;
+        const down = (y + 1) * this.width + x;
+        const left = y * this.width + (x - 1);
+        const right = y * this.width + (x + 1);
+
+        const upAccessible = grid[up] !== this.TILES.WALL && !otherBoxes.includes(up);
+        const downAccessible = grid[down] !== this.TILES.WALL && !otherBoxes.includes(down);
+        const leftAccessible = grid[left] !== this.TILES.WALL && !otherBoxes.includes(left);
+        const rightAccessible = grid[right] !== this.TILES.WALL && !otherBoxes.includes(right);
+
+        const accessibleSides = [upAccessible, downAccessible, leftAccessible, rightAccessible].filter(Boolean).length;
+
+        // Need at least 2 accessible sides to maneuver
+        // (Unless box is already on target)
+        if (targets.includes(boxPos)) return true;
+
+        return accessibleSides >= 2;
+    }
+
     isFreezeDeadlock(grid, x, y, targets) {
         // A box is freeze-deadlocked if it's against a wall and can't reach
         // a target by sliding along that wall
@@ -281,6 +308,10 @@ class SokobanGenerator {
 
                 // Check new box position isn't a deadlock
                 if (this.isDeadlock(state.grid, newBoxPos, targets)) continue;
+
+                // Also check if player can access this box from multiple sides
+                // (needed to push it toward targets later)
+                if (!this.isBoxAccessible(state.grid, newBoxPos, state.boxes, targets)) continue;
 
                 // Valid move!
                 state.boxes[boxIdx] = newBoxPos;
