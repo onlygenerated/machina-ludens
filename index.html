@@ -632,7 +632,12 @@
 
                 console.log('About to save state...');
                 // Save state for undo
-                this.saveState();
+                try {
+                    this.saveState();
+                    console.log('saveState() completed successfully');
+                } catch (error) {
+                    console.error('Error in saveState():', error);
+                }
 
                 // Check if pushing a box
                 if (targetTile === TILES.BOX || targetTile === TILES.BOX_ON_TARGET) {
@@ -853,10 +858,10 @@
                     timestamp: Date.now(),
                     averages: stats.averages
                 });
-                this.saveState();
+                this.savePersistentState();
             }
 
-            saveState() {
+            savePersistentState() {
                 const state = {
                     population: this.population.toJSON(),
                     generationHistory: this.generationHistory,
@@ -999,7 +1004,7 @@
                         this.ratedBots = [];
                         this.currentLevelRating = 0;
 
-                        this.saveState(); // Save to localStorage
+                        this.savePersistentState(); // Save to localStorage
                         this.updateGenerationDisplay();
                         this.updatePopulationStats();
 
