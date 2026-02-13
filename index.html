@@ -668,17 +668,24 @@
             }
 
             undo() {
-                if (this.history.length === 0) return;
+                if (this.history.length === 0) {
+                    console.log('No moves to undo');
+                    return;
+                }
 
                 const state = this.history.pop();
-                this.grid = state.grid;
+                this.grid = [...state.grid]; // Make sure to copy the array
                 this.playerX = state.playerX;
                 this.playerY = state.playerY;
                 this.moves = state.moves;
                 this.pushes = state.pushes;
+                this.won = false; // Reset win state when undoing
 
                 this.updateUI();
                 this.render();
+
+                // Clear win message
+                document.getElementById('win-message').textContent = '';
             }
 
             saveState() {
