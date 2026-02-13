@@ -14,17 +14,17 @@ class Genome {
     // Generate random genes within valid ranges
     static randomGenes() {
         return {
-            // Grid dimensions (7-10)
-            gridSize: 7 + Math.floor(Math.random() * 4),
+            // Grid dimensions (9-14) - larger boards on average
+            gridSize: 9 + Math.floor(Math.random() * 6),
 
-            // Number of boxes/targets (2-5)
-            boxCount: 2 + Math.floor(Math.random() * 4),
+            // Number of boxes/targets (3-6) - more boxes
+            boxCount: 3 + Math.floor(Math.random() * 4),
 
-            // Complexity: number of reverse-play moves (20-50)
-            complexity: 20 + Math.floor(Math.random() * 31),
+            // Complexity: number of reverse-play moves (30-60) - more complex
+            complexity: 30 + Math.floor(Math.random() * 31),
 
-            // Wall density: probability of internal walls (0-0.15)
-            wallDensity: Math.random() * 0.15
+            // Wall density: probability of internal walls (0.05-0.25) - more obstacles
+            wallDensity: 0.05 + Math.random() * 0.2
         };
     }
 

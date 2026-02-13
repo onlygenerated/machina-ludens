@@ -113,7 +113,51 @@ class SokobanGenerator {
                 }
             }
         }
+
+        // Add some structured obstacles in the middle for variety
+        this.addStructuredObstacles(grid);
+
         return grid;
+    }
+
+    addStructuredObstacles(grid) {
+        // Add 1-3 small obstacle patterns in the middle of the board
+        const numObstacles = 1 + Math.floor(Math.random() * 3);
+
+        for (let i = 0; i < numObstacles; i++) {
+            const pattern = Math.floor(Math.random() * 4);
+
+            // Pick a random center point (avoiding edges)
+            const cx = 3 + Math.floor(Math.random() * Math.max(1, this.width - 6));
+            const cy = 3 + Math.floor(Math.random() * Math.max(1, this.height - 6));
+
+            switch(pattern) {
+                case 0: // Single wall
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    break;
+                case 1: // 2x1 horizontal
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    break;
+                case 2: // 1x2 vertical
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    break;
+                case 3: // L-shape
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    break;
+            }
+        }
+    }
+
+    setTileIfFloor(grid, x, y, tile) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        const idx = y * this.width + x;
+        if (grid[idx] === this.TILES.FLOOR) {
+            grid[idx] = tile;
+        }
     }
 
     placeSafeTargets(grid) {
