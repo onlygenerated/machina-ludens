@@ -39,29 +39,36 @@ class SokobanGenerator {
         // Step 1: Create simple room (no internal walls for now)
         const grid = this.createSimpleRoom();
 
-        // Step 2: Place targets in safe positions (not corners)
-        const targets = this.placeSafeTargets(grid);
-        if (targets.length === 0) return null;
+        // Step 2: Place BOXES in safe positions (center of room)
+        // These will become the TARGETS after reverse-play
+        const initialBoxPositions = this.placeSafeTargets(grid);
+        if (initialBoxPositions.length === 0) return null;
 
-        // Step 3: Place boxes on targets (solved state)
-        const boxes = [...targets];
+        // Step 3: Start with boxes in center (solved state for reverse-play)
+        const boxes = [...initialBoxPositions];
 
         // Step 4: Place player adjacent to a box
         let playerPos = this.placePlayerNearBoxes(grid, boxes);
         if (playerPos === -1) return null;
 
-        // Step 5: Perform reverse moves to scramble
-        const state = this.reversePlay(grid, boxes, playerPos, targets);
+        // Step 5: Perform reverse moves - pulls boxes OUTWARD from center
+        const state = this.reversePlay(grid, boxes, playerPos, initialBoxPositions);
 
-        // Step 6: Validate no boxes are in deadlocks
-        for (const box of state.boxes) {
+        // Step 6: The initial positions become the TARGETS
+        // The final box positions from reverse-play become the starting BOX positions
+        // This way boxes start at edges, targets are in center
+        const targets = initialBoxPositions;
+        const finalBoxes = state.boxes;
+
+        // Step 7: Validate no boxes are in deadlocks
+        for (const box of finalBoxes) {
             if (this.isDeadlock(state.grid, box, targets)) {
                 return null; // Invalid, try again
             }
         }
 
-        // Step 7: Build final grid
-        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
+        // Step 8: Build final grid with swapped positions
+        return this.buildFinalGrid(state.grid, finalBoxes, state.playerPos, targets);
     }
 
     createSimpleRoom() {
