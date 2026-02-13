@@ -2,15 +2,22 @@
 
 ## Current Status
 ✅ Minimal playable Sokoban prototype (web-based, mobile-friendly)
-✅ 5 hand-crafted levels
-✅ Touch controls and swipe gestures
+✅ Touch controls and swipe gestures (D-pad + swipe)
+✅ Procedural level generation with reverse-play algorithm
+✅ Genome-based evolution system with crossover and mutation
+✅ Inline rating system with 5-star reviews
+✅ Population breeding based on player ratings
+✅ Auto-generated levels on page load
+✅ Larger, more complex boards with internal obstacles
+
+**Current Phase:** Phase 1 - Genetic Algorithm (ready for cultural divergence testing)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
 
 ---
 
-## Phase 0: Foundation (Current - Week 1)
+## Phase 0: Foundation ✅ COMPLETE
 **Goal:** Get basic procedural generation working
 
 ### Milestone 0.1: Level Representation ✅
@@ -18,13 +25,16 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [x] Tile types (wall, floor, box, target, player)
 - [x] Win condition detection
 
-### Milestone 0.2: Procedural Level Generation (NEXT)
-- [ ] Simple random level generator
-- [ ] Solvability verification (reverse-play algorithm)
-- [ ] Parameter controls (grid size, box count, wall density)
-- [ ] Generate button in UI to test variations
+### Milestone 0.2: Procedural Level Generation ✅
+- [x] Procedural level generator using reverse-play algorithm (Taylor & Parberry 2011)
+- [x] Solvability verification (reverse moves guarantee solvability)
+- [x] Parameter controls (grid size 9-14, box count 3-6, complexity 30-60 moves, wall density 5-25%)
+- [x] Generate button in UI to test variations
+- [x] Validation: corner deadlock, freeze deadlock, wall-adjacency, accessibility checks
+- [x] Structured obstacle patterns (singles, horizontal/vertical pairs, L-shapes)
+- [x] Boxes never start on targets (fully unsolved puzzles)
 
-**Success Criteria:** Can generate 10+ solvable levels on demand with varying difficulty
+**Success Criteria:** ✅ Can generate unlimited solvable levels with varying difficulty
 
 ### Milestone 0.3: Level Quality Metrics
 - [ ] Calculate solution length (min moves)
@@ -32,26 +42,32 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [ ] Difficulty estimation heuristic
 - [ ] Display metrics in UI for generated levels
 
+**Status:** Deferred - not blocking for Phase 1 evolution testing
+
 ---
 
-## Phase 1: Genetic Algorithm (Week 2-3)
+## Phase 1: Genetic Algorithm (CURRENT)
 **Goal:** Evolve level parameters without AI "bots" yet
 
-### Milestone 1.1: Genome Definition
-- [ ] Define genome parameters (grid size, box count, wall density, corridor width, etc.)
-- [ ] Crossover function (combine two genomes)
-- [ ] Mutation function (random parameter tweaks)
+### Milestone 1.1: Genome Definition ✅
+- [x] Define genome parameters (gridSize: 9-14, boxCount: 3-6, complexity: 30-60, wallDensity: 0.05-0.25)
+- [x] Crossover function (randomly pick genes from either parent)
+- [x] Mutation function (±1 for sizes, ±5 for complexity, ±0.02 for density, 20% mutation rate)
+- [x] Genome serialization (toJSON/fromJSON)
 
-### Milestone 1.2: Manual Selection Loop
-- [ ] Generate 5 levels from different genomes
-- [ ] Player rates each level (thumbs up/down or 1-5 stars)
-- [ ] Breed new generation from top-rated levels
-- [ ] Visualize genome parameters for each level
+### Milestone 1.2: Manual Selection Loop ✅
+- [x] Generate levels from population genomes
+- [x] Player rates each level with 5-star system
+- [x] Breed new generation from top-rated levels (top 50% selection + elitism)
+- [x] Inline rating UI integrated into gameplay
+- [x] Generation counter tracks evolution progress
+- [x] Streamlined workflow: Generate → Play → Rate → Breed (when 3+ rated)
 
-### Milestone 1.3: Cultural Divergence Test
+### Milestone 1.3: Cultural Divergence Test (NEXT)
 - [ ] Run 20+ generations with different selection strategies
-- [ ] Track genome evolution over time
+- [ ] Track genome evolution over time (population stats already available)
 - [ ] Can outside observer distinguish "cultures"?
+- [ ] Document evolved preferences (e.g., "prefers large sparse boards" vs "small dense mazes")
 
 **Success Criteria:** Different selection preferences produce noticeably different level styles
 
@@ -158,16 +174,49 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ## Next Immediate Steps
 
-**This Week:**
-1. Build simple procedural level generator (Milestone 0.2)
-2. Implement reverse-play solvability check
-3. Add "Generate" button to test variations
+**Current Focus (Milestone 1.3):**
+1. Run cultural divergence experiments
+   - Generate 20+ generations with consistent rating strategy
+   - Try different strategies (prefer large boards, prefer small dense, prefer simple, etc.)
+   - Track how population averages shift over generations
+   - Document observable "cultures" that emerge
 
-**Success Metric:** Can generate 10 different solvable Sokoban levels with varying parameters
+2. Optional quality improvements:
+   - Add solution length calculation (could inform ratings)
+   - Display genome parameters during gameplay
+   - Save/load population states for long-term evolution
+   - Generation history visualization
 
-**After That:**
-- Add quality metrics (solution length, complexity)
-- Start Phase 1: Define genome and implement breeding
+**Success Metric:** Can demonstrate 3+ distinct evolved "cultures" with different level characteristics
+
+**After Phase 1:**
+- Phase 2: Add bot layer (visual representations, curation simulation)
+- Phase 3: Introduce mechanic mutations (special tiles, rule variations)
+
+---
+
+## Implementation Notes
+
+### Current Architecture
+- `generator.js`: SokobanGenerator class with reverse-play algorithm
+- `genome.js`: Genome and Population classes for evolution
+- `index.html`: Single-file web app with game logic and inline rating UI
+- Population size: 5 genomes per generation
+- Selection: Top 50% become parents, best genome preserved (elitism)
+- Mutation rate: 20% per gene
+
+### Key Design Decisions
+1. **Reverse-play generation**: Start with solved state, pull boxes away from targets
+2. **Validation layers**: Multiple checks prevent unsolvable/deadlocked levels
+3. **Inline rating**: Streamlined UX keeps player in flow state
+4. **No pre-solved boxes**: All levels start fully unsolved for consistent difficulty
+5. **Structured obstacles**: Small wall clusters create interesting navigation challenges
+
+### Known Limitations
+- Square grids only (width = height)
+- No solution length metric yet
+- No genome parameter visualization during play
+- No population save/load
 
 ---
 
