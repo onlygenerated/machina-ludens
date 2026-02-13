@@ -719,12 +719,18 @@
             // === BREEDING MODE METHODS ===
 
             toggleBreedingMode() {
-                this.breedingMode = !this.breedingMode;
-
                 const gameContainer = document.getElementById('game-container');
                 const breedingPanel = document.getElementById('breeding-panel');
 
-                if (this.breedingMode) {
+                // If we're currently showing the breeding panel, go back to game
+                if (breedingPanel.classList.contains('active')) {
+                    this.breedingMode = false;
+                    gameContainer.style.display = 'block';
+                    breedingPanel.classList.remove('active');
+                } else {
+                    // Switch to breeding mode
+                    this.breedingMode = true;
+
                     // Initialize population if needed
                     if (!this.population) {
                         this.population = new Population(5); // Start with 5 genomes
@@ -735,10 +741,6 @@
                     breedingPanel.classList.add('active');
 
                     this.displayCandidates();
-                } else {
-                    // Show game, hide breeding panel
-                    gameContainer.style.display = 'block';
-                    breedingPanel.classList.remove('active');
                 }
             }
 
@@ -790,9 +792,9 @@
                 // Generate level from this genome
                 const level = genome.generateLevel();
 
-                // Switch to game view temporarily
+                // Switch to game view temporarily (keep breedingMode true)
                 document.getElementById('game-container').style.display = 'block';
-                document.getElementById('breeding-panel').style.display = 'none';
+                document.getElementById('breeding-panel').classList.remove('active');
 
                 // Load the generated level
                 this.currentLevel = -1;
