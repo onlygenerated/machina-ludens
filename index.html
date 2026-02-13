@@ -506,7 +506,28 @@
             }
 
             reset() {
-                this.loadLevel(this.currentLevel);
+                // If it's a generated level, reset to saved state
+                if (this.currentLevel === -1 && this.generatedLevelData) {
+                    const level = this.generatedLevelData;
+                    this.width = level.width;
+                    this.height = level.height;
+                    this.grid = [...level.grid]; // Copy the grid
+                    this.playerX = level.playerX;
+                    this.playerY = level.playerY;
+                    this.moves = 0;
+                    this.pushes = 0;
+                    this.history = [];
+                    this.won = false;
+
+                    this.canvas.width = this.width * TILE_SIZE;
+                    this.canvas.height = this.height * TILE_SIZE;
+
+                    this.updateUI();
+                    this.render();
+                } else {
+                    // Regular level from LEVELS array
+                    this.loadLevel(this.currentLevel);
+                }
             }
 
             nextLevel() {
@@ -523,6 +544,15 @@
 
                 // Generate level from this bot's genome
                 const generatedLevel = this.currentBot.generateLevel();
+
+                // Save the generated level data for reset functionality
+                this.generatedLevelData = {
+                    width: generatedLevel.width,
+                    height: generatedLevel.height,
+                    grid: [...generatedLevel.grid], // Copy the grid
+                    playerX: generatedLevel.playerX,
+                    playerY: generatedLevel.playerY
+                };
 
                 // Load it as a custom level
                 this.currentLevel = -1; // Mark as generated
