@@ -36,39 +36,40 @@ class SokobanGenerator {
     }
 
     attemptGenerate() {
-        // Step 1: Create simple room (no internal walls for now)
+        // Step 1: Create simple room
         const grid = this.createSimpleRoom();
 
-        // Step 2: Place BOXES in safe positions (center of room)
-        // These will become the TARGETS after reverse-play
-        const initialBoxPositions = this.placeSafeTargets(grid);
-        if (initialBoxPositions.length === 0) return null;
+        // Step 2: Place TARGETS (these stay fixed throughout)
+        const targets = this.placeSafeTargets(grid);
+        if (targets.length === 0) return null;
 
-        // Step 3: Start with boxes in center (solved state for reverse-play)
-        const boxes = [...initialBoxPositions];
+        // Step 3: Place BOXES on targets (solved state - this is our starting point for reverse-play)
+        const boxes = [...targets];
 
-        // Step 4: Place player adjacent to a box
+        // Step 4: Place player adjacent to boxes
         let playerPos = this.placePlayerNearBoxes(grid, boxes);
         if (playerPos === -1) return null;
 
-        // Step 5: Perform reverse moves - pulls boxes OUTWARD from center
-        const state = this.reversePlay(grid, boxes, playerPos, initialBoxPositions);
+        // Step 5: PULL boxes away from targets (reverse moves)
+        // This scatters the boxes while keeping targets in place
+        const state = this.reversePlay(grid, boxes, playerPos, targets);
 
-        // Step 6: The initial positions become the TARGETS
-        // The final box positions from reverse-play become the starting BOX positions
-        // This way boxes start at edges, targets are in center
-        const targets = initialBoxPositions;
-        const finalBoxes = state.boxes;
+        // Step 6: After reverse-play:
+        // - Targets stay in their original positions
+        // - Boxes have been pulled to new scattered positions
+        // - Player is wherever the last pull left them
 
-        // Step 7: Validate no boxes are in deadlocks
-        for (const box of finalBoxes) {
+        // Step 7: Validate no boxes ended up in deadlocks
+        for (const box of state.boxes) {
             if (this.isDeadlock(state.grid, box, targets)) {
                 return null; // Invalid, try again
             }
         }
 
-        // Step 8: Build final grid with swapped positions
-        return this.buildFinalGrid(state.grid, finalBoxes, state.playerPos, targets);
+        // Step 8: Build final grid
+        // Targets: original positions (fixed)
+        // Boxes: scattered positions from reverse-play
+        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
     }
 
     createSimpleRoom() {
