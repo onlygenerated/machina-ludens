@@ -284,6 +284,9 @@
 
         <div id="rating-panel">
             <div id="bot-presentation" style="text-align: center; margin-bottom: 15px;">
+                <p id="curator-info" style="margin: 5px 0 10px 0; color: #666; font-size: 0.85em;">
+                    <span id="curator-name">-</span> presents:
+                </p>
                 <canvas id="bot-sprite" width="80" height="80" style="display: block; margin: 10px auto; border-radius: 50%; background: #1a1a1a;"></canvas>
                 <h3 id="bot-name" style="margin: 5px 0; color: #e0e0e0; font-size: 1.1em;">-</h3>
                 <p id="bot-personality" style="margin: 5px 0; color: #888; font-size: 0.85em; font-style: italic;">-</p>
@@ -299,6 +302,9 @@
             <div id="generation-display">Generation: 0 | Rated: 0</div>
             <div id="population-stats" style="margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.8em; color: #888; text-align: center; display: none;">
                 Population Avg: Grid: - | Boxes: - | Complexity: - | Density: -
+            </div>
+            <div id="curation-stats" style="margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.75em; color: #666; text-align: center; display: none;">
+                Curation: - selections | Avg affinity: -
             </div>
             <div style="text-align: center;">
                 <button id="breed-btn" onclick="game.breedNextGeneration()">🧬 Breed Next Generation</button>
@@ -421,9 +427,11 @@
                 // Breeding mode state
                 this.population = new Population(5); // Start with initial population
                 this.currentBot = null; // Currently playing bot
+                this.curatorBot = null; // Bot who curated/selected this level
                 this.ratedBots = []; // Track rated bots with their scores
                 this.currentLevelRating = 0;
                 this.generationHistory = []; // Track stats over generations
+                this.curationStats = []; // Track curator choices
 
                 // Load saved state if available
                 this.loadState();
@@ -535,14 +543,29 @@
             }
 
             generateLevel() {
-                // Pick a random genome from current population
                 const genomes = this.population.getCurrentGeneration();
-                const randomGenome = genomes[Math.floor(Math.random() * genomes.length)];
 
-                // Wrap in a Bot for personality
-                this.currentBot = new Bot(randomGenome);
+                // Pick a random bot to be the curator
+                const curatorGenome = genomes[Math.floor(Math.random() * genomes.length)];
+                this.curatorBot = new Bot(curatorGenome);
 
-                // Generate level from this bot's genome
+                // Curator evaluates all genomes and picks their favorite
+                const curationResult = this.curatorBot.curate(genomes);
+                const chosenGenome = curationResult.genome;
+                const affinity = curationResult.affinity;
+
+                // Create bot for the chosen genome
+                this.currentBot = new Bot(chosenGenome);
+
+                // Track curation decision
+                this.curationStats.push({
+                    curator: this.curatorBot.name,
+                    creator: this.currentBot.name,
+                    affinity: affinity,
+                    generation: this.population.generation
+                });
+
+                // Generate level from chosen genome
                 const generatedLevel = this.currentBot.generateLevel();
 
                 // Save the generated level data for reset functionality
@@ -805,13 +828,21 @@
             updateBotDisplay() {
                 if (!this.currentBot) return;
 
-                // Update bot name
+                // Update curator info
+                if (this.curatorBot) {
+                    const curatorInfo = document.getElementById('curator-name');
+                    curatorInfo.textContent = this.curatorBot.name;
+                    curatorInfo.style.color = this.curatorBot.colors.primary;
+                    curatorInfo.style.fontWeight = 'bold';
+                }
+
+                // Update creator bot name
                 document.getElementById('bot-name').textContent = this.currentBot.name;
 
                 // Update personality
                 document.getElementById('bot-personality').textContent = this.currentBot.personality;
 
-                // Draw bot sprite
+                // Draw creator bot sprite
                 const canvas = document.getElementById('bot-sprite');
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -829,6 +860,17 @@
                     Complexity: ${stats.averages.complexity} |
                     Density: ${stats.averages.wallDensity}
                 `;
+
+                // Update curation stats if available
+                if (this.curationStats.length > 0) {
+                    const avgAffinity = this.curationStats.reduce((sum, s) => sum + s.affinity, 0) / this.curationStats.length;
+                    const curationDisplay = document.getElementById('curation-stats');
+                    curationDisplay.style.display = 'block';
+                    curationDisplay.innerHTML = `
+                        Curations: ${this.curationStats.length} selections |
+                        Avg affinity: ${(avgAffinity * 100).toFixed(1)}%
+                    `;
+                }
             }
 
             saveGenerationHistory() {
@@ -1029,6 +1071,7 @@
                 // Reset rated bots for new generation
                 this.ratedBots = [];
                 this.currentLevelRating = 0;
+                this.curationStats = []; // Reset curation stats for new generation
                 this.updateRatingDisplay();
                 this.updateGenerationDisplay();
                 this.updatePopulationStats();

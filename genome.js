@@ -430,6 +430,56 @@ class Bot {
         return this.genome.generateLevel();
     }
 
+    // Calculate affinity (preference) for another genome
+    // Returns a score 0-1 indicating how much this bot "likes" the other genome
+    calculateAffinity(otherGenome) {
+        const myGenes = this.genome.genes;
+        const theirGenes = otherGenome.genes;
+
+        // Calculate normalized distance for each trait
+        // Closer values = higher affinity
+
+        // Grid size: 9-14 range (span of 5)
+        const gridDiff = Math.abs(myGenes.gridSize - theirGenes.gridSize) / 5;
+
+        // Box count: 3-6 range (span of 3)
+        const boxDiff = Math.abs(myGenes.boxCount - theirGenes.boxCount) / 3;
+
+        // Complexity: 30-60 range (span of 30)
+        const complexDiff = Math.abs(myGenes.complexity - theirGenes.complexity) / 30;
+
+        // Wall density: 0-0.25 range (span of 0.25)
+        const densityDiff = Math.abs(myGenes.wallDensity - theirGenes.wallDensity) / 0.25;
+
+        // Average the differences (0 = identical, 1 = maximally different)
+        const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff) / 4;
+
+        // Convert to affinity score (1 = perfect match, 0 = completely different)
+        const affinity = 1 - avgDiff;
+
+        return affinity;
+    }
+
+    // Curate: select favorite level from multiple candidates
+    // Returns the genome this bot prefers most
+    curate(candidateGenomes) {
+        let bestGenome = candidateGenomes[0];
+        let bestAffinity = this.calculateAffinity(candidateGenomes[0]);
+
+        for (let i = 1; i < candidateGenomes.length; i++) {
+            const affinity = this.calculateAffinity(candidateGenomes[i]);
+            if (affinity > bestAffinity) {
+                bestAffinity = affinity;
+                bestGenome = candidateGenomes[i];
+            }
+        }
+
+        return {
+            genome: bestGenome,
+            affinity: bestAffinity
+        };
+    }
+
     // Serialize to JSON
     toJSON() {
         return {
