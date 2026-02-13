@@ -265,10 +265,28 @@
             <button onclick="game.generateLevel()" style="background: #4a5a3a; border-color: #6a8a5a;">🎲 Generate</button>
         </div>
 
+        <div id="experiment-controls" style="margin-top: 15px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
+            <div style="margin-bottom: 10px; color: #888; font-size: 0.85em;">Experiment Tools</div>
+            <button onclick="game.toggleHistoryView()" style="background: #3a4a5a; border-color: #5a6a7a;">📊 View History</button>
+            <button onclick="game.exportHistory()" style="background: #3a5a4a; border-color: #5a7a6a;">💾 Export Data</button>
+            <button onclick="game.saveExperiment()" style="background: #4a3a5a; border-color: #6a5a7a;">💾 Save Experiment</button>
+            <button onclick="document.getElementById('load-file').click()" style="background: #3a5a5a; border-color: #5a7a7a;">📂 Load Experiment</button>
+            <button onclick="game.clearState()" style="background: #5a3a3a; border-color: #7a5a5a;">🗑️ Clear & Restart</button>
+            <input type="file" id="load-file" accept=".json" style="display: none;" onchange="game.loadExperiment(event)">
+        </div>
+
+        <div id="history-view" style="display: none; margin-top: 15px; padding: 15px; background: #1a1a1a; border-radius: 6px; max-height: 300px; overflow-y: auto;">
+            <h3 style="margin: 0 0 10px 0; font-size: 1em; color: #aaa;">Generation History</h3>
+            <div id="history-content"></div>
+        </div>
+
         <div id="win-message"></div>
 
         <div id="rating-panel">
             <h3>Rate this level</h3>
+            <div id="genome-info" style="margin-bottom: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.85em; color: #aaa; text-align: center;">
+                Grid: - | Boxes: - | Complexity: - | Wall Density: -
+            </div>
             <div class="rating-stars">
                 <button class="star-btn" onclick="game.rateCurrentLevel(1)">★</button>
                 <button class="star-btn" onclick="game.rateCurrentLevel(2)">★</button>
@@ -277,6 +295,9 @@
                 <button class="star-btn" onclick="game.rateCurrentLevel(5)">★</button>
             </div>
             <div id="generation-display">Generation: 0 | Rated: 0</div>
+            <div id="population-stats" style="margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.8em; color: #888; text-align: center; display: none;">
+                Population Avg: Grid: - | Boxes: - | Complexity: - | Density: -
+            </div>
             <div style="text-align: center;">
                 <button id="breed-btn" onclick="game.breedNextGeneration()">🧬 Breed Next Generation</button>
             </div>
@@ -400,6 +421,10 @@
                 this.currentGenome = null; // Currently playing genome
                 this.ratedGenomes = []; // Track rated genomes with their scores
                 this.currentLevelRating = 0;
+                this.generationHistory = []; // Track stats over generations
+
+                // Load saved state if available
+                this.loadState();
 
                 this.setupControls();
                 this.setupTouchGestures();
@@ -514,6 +539,7 @@
                 this.updateUI();
                 this.render();
                 this.updateRatingDisplay();
+                this.updateGenomeDisplay();
             }
 
             setupControls() {
@@ -733,6 +759,204 @@
                 display.textContent = `Generation: ${this.population.generation} | Rated: ${this.ratedGenomes.length}`;
             }
 
+            updateGenomeDisplay() {
+                if (!this.currentGenome) return;
+
+                const genes = this.currentGenome.genes;
+                const display = document.getElementById('genome-info');
+                display.innerHTML = `
+                    <strong>Current Level Genome:</strong><br>
+                    Grid: ${genes.gridSize}x${genes.gridSize} |
+                    Boxes: ${genes.boxCount} |
+                    Complexity: ${genes.complexity} |
+                    Wall Density: ${(genes.wallDensity * 100).toFixed(0)}%
+                `;
+            }
+
+            updatePopulationStats() {
+                const stats = this.population.getStats();
+                const display = document.getElementById('population-stats');
+                display.style.display = 'block';
+                display.innerHTML = `
+                    <strong>Population Averages (Gen ${stats.generation}):</strong><br>
+                    Grid: ${stats.averages.gridSize} |
+                    Boxes: ${stats.averages.boxCount} |
+                    Complexity: ${stats.averages.complexity} |
+                    Density: ${stats.averages.wallDensity}
+                `;
+            }
+
+            saveGenerationHistory() {
+                const stats = this.population.getStats();
+                this.generationHistory.push({
+                    generation: stats.generation,
+                    timestamp: Date.now(),
+                    averages: stats.averages
+                });
+                this.saveState();
+            }
+
+            saveState() {
+                const state = {
+                    population: this.population.toJSON(),
+                    generationHistory: this.generationHistory,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('machinaLudensState', JSON.stringify(state));
+            }
+
+            loadState() {
+                try {
+                    const saved = localStorage.getItem('machinaLudensState');
+                    if (!saved) return;
+
+                    const state = JSON.parse(saved);
+                    this.population = Population.fromJSON(state.population);
+                    this.generationHistory = state.generationHistory || [];
+
+                    console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries`);
+                } catch (e) {
+                    console.error('Failed to load saved state:', e);
+                }
+            }
+
+            clearState() {
+                if (confirm('Clear all evolution history and restart? This cannot be undone.')) {
+                    localStorage.removeItem('machinaLudensState');
+                    this.population = new Population(5);
+                    this.generationHistory = [];
+                    this.ratedGenomes = [];
+                    this.currentLevelRating = 0;
+                    this.updateGenerationDisplay();
+                    this.updatePopulationStats();
+                    alert('Evolution history cleared. Starting fresh!');
+                    this.generateLevel();
+                }
+            }
+
+            exportHistory() {
+                const data = {
+                    generationHistory: this.generationHistory,
+                    currentGeneration: this.population.generation,
+                    exportDate: new Date().toISOString()
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `machina-ludens-history-gen${this.population.generation}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            toggleHistoryView() {
+                const historyView = document.getElementById('history-view');
+                if (historyView.style.display === 'none') {
+                    historyView.style.display = 'block';
+                    this.renderHistoryTable();
+                } else {
+                    historyView.style.display = 'none';
+                }
+            }
+
+            renderHistoryTable() {
+                const content = document.getElementById('history-content');
+
+                if (this.generationHistory.length === 0) {
+                    content.innerHTML = '<p style="color: #666; font-style: italic;">No generation history yet. Breed your first generation to start tracking!</p>';
+                    return;
+                }
+
+                let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">';
+                html += '<thead><tr style="border-bottom: 1px solid #444;">';
+                html += '<th style="padding: 5px; text-align: left; color: #aaa;">Gen</th>';
+                html += '<th style="padding: 5px; text-align: right; color: #aaa;">Grid</th>';
+                html += '<th style="padding: 5px; text-align: right; color: #aaa;">Boxes</th>';
+                html += '<th style="padding: 5px; text-align: right; color: #aaa;">Complex</th>';
+                html += '<th style="padding: 5px; text-align: right; color: #aaa;">Density</th>';
+                html += '</tr></thead><tbody>';
+
+                this.generationHistory.forEach(entry => {
+                    html += '<tr style="border-bottom: 1px solid #333;">';
+                    html += `<td style="padding: 5px; color: #e0e0e0;">${entry.generation}</td>`;
+                    html += `<td style="padding: 5px; text-align: right; color: #4ade80;">${entry.averages.gridSize}</td>`;
+                    html += `<td style="padding: 5px; text-align: right; color: #60a5fa;">${entry.averages.boxCount}</td>`;
+                    html += `<td style="padding: 5px; text-align: right; color: #fbbf24;">${entry.averages.complexity}</td>`;
+                    html += `<td style="padding: 5px; text-align: right; color: #f87171;">${entry.averages.wallDensity}</td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                content.innerHTML = html;
+            }
+
+            saveExperiment() {
+                const experimentName = prompt('Name this experiment (e.g., "Large Board Culture", "Dense Maze Preference"):', `Experiment-Gen${this.population.generation}`);
+                if (!experimentName) return;
+
+                const data = {
+                    experimentName: experimentName,
+                    population: this.population.toJSON(),
+                    generationHistory: this.generationHistory,
+                    savedDate: new Date().toISOString(),
+                    currentGeneration: this.population.generation
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${experimentName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                alert(`Experiment "${experimentName}" saved!\n\nYou can load this file later to continue the experiment.`);
+            }
+
+            loadExperiment(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+
+                        if (!data.population || !data.generationHistory) {
+                            alert('Invalid experiment file format!');
+                            return;
+                        }
+
+                        if (this.population.generation > 0 || this.generationHistory.length > 0) {
+                            if (!confirm('Loading this experiment will replace your current progress. Continue?')) {
+                                return;
+                            }
+                        }
+
+                        this.population = Population.fromJSON(data.population);
+                        this.generationHistory = data.generationHistory;
+                        this.ratedGenomes = [];
+                        this.currentLevelRating = 0;
+
+                        this.saveState(); // Save to localStorage
+                        this.updateGenerationDisplay();
+                        this.updatePopulationStats();
+
+                        alert(`Experiment "${data.experimentName || 'Unnamed'}" loaded!\n\nGeneration: ${this.population.generation}\nHistory entries: ${this.generationHistory.length}`);
+
+                        this.generateLevel();
+                    } catch (err) {
+                        alert('Failed to load experiment: ' + err.message);
+                        console.error(err);
+                    }
+                };
+                reader.readAsText(file);
+
+                // Reset the file input so the same file can be loaded again
+                event.target.value = '';
+            }
+
             breedNextGeneration() {
                 if (this.ratedGenomes.length < 3) {
                     alert('Rate at least 3 levels before breeding!');
@@ -754,11 +978,15 @@
                 // Evolve to next generation
                 this.population.evolve(fitnessScores);
 
+                // Save generation history
+                this.saveGenerationHistory();
+
                 // Reset rated genomes for new generation
                 this.ratedGenomes = [];
                 this.currentLevelRating = 0;
                 this.updateRatingDisplay();
                 this.updateGenerationDisplay();
+                this.updatePopulationStats();
 
                 // Hide breed button
                 document.getElementById('breed-btn').classList.remove('visible');
