@@ -671,12 +671,14 @@
             }
 
             undo() {
+                console.log('Undo called. History length:', this.history.length);
                 if (this.history.length === 0) {
                     console.log('No moves to undo');
                     return;
                 }
 
                 const state = this.history.pop();
+                console.log('Restoring state:', state);
                 this.grid = [...state.grid]; // Make sure to copy the array
                 this.playerX = state.playerX;
                 this.playerY = state.playerY;
@@ -684,6 +686,7 @@
                 this.pushes = state.pushes;
                 this.won = false; // Reset win state when undoing
 
+                console.log('After undo - moves:', this.moves, 'pushes:', this.pushes);
                 this.updateUI();
                 this.render();
 
@@ -699,6 +702,7 @@
                     moves: this.moves,
                     pushes: this.pushes
                 });
+                console.log('Saved state. History length:', this.history.length);
             }
 
             isValid(x, y) {
