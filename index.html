@@ -403,9 +403,8 @@
             }
 
             generateLevel() {
-                // Create a new procedurally generated level
-                const generator = new SokobanGenerator(8, 8, 3, 30);
-                const generatedLevel = generator.generate();
+                // Create a new procedurally generated level with random parameters
+                const generatedLevel = SokobanGenerator.generateRandom();
 
                 // Load it as a custom level
                 this.currentLevel = -1; // Mark as generated

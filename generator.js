@@ -2,11 +2,12 @@
 // Based on Taylor & Parberry (2011) approach
 
 class SokobanGenerator {
-    constructor(width = 8, height = 8, boxCount = 3, complexity = 20) {
+    constructor(width = 8, height = 8, boxCount = 3, complexity = 20, wallDensity = 0) {
         this.width = width;
         this.height = height;
         this.boxCount = boxCount;
         this.complexity = complexity;
+        this.wallDensity = wallDensity; // 0-0.15, probability of internal walls
 
         this.TILES = {
             FLOOR: 0,
@@ -16,6 +17,24 @@ class SokobanGenerator {
             PLAYER: 4,
             BOX_ON_TARGET: 5
         };
+    }
+
+    // Static method to generate with random parameters
+    static generateRandom() {
+        // Vary grid size (7x7 to 10x10)
+        const size = 7 + Math.floor(Math.random() * 4);
+
+        // Vary box count (2 to 5)
+        const boxes = 2 + Math.floor(Math.random() * 4);
+
+        // Vary complexity (20 to 50 reverse moves)
+        const complexity = 20 + Math.floor(Math.random() * 31);
+
+        // Vary wall density (0% to 10% chance of internal walls)
+        const wallDensity = Math.random() * 0.1;
+
+        const generator = new SokobanGenerator(size, size, boxes, complexity, wallDensity);
+        return generator.generate();
     }
 
     generate() {
@@ -76,12 +95,21 @@ class SokobanGenerator {
         const grid = [];
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                // Only walls on perimeter
+                // Walls on perimeter
                 if (x === 0 || x === this.width - 1 ||
                     y === 0 || y === this.height - 1) {
                     grid.push(this.TILES.WALL);
                 } else {
-                    grid.push(this.TILES.FLOOR);
+                    // Add internal walls based on density
+                    // But keep a safety margin from edges (at least 2 tiles from border)
+                    const isSafeZone = x >= 2 && x < this.width - 2 &&
+                                      y >= 2 && y < this.height - 2;
+
+                    if (!isSafeZone && Math.random() < this.wallDensity) {
+                        grid.push(this.TILES.WALL);
+                    } else {
+                        grid.push(this.TILES.FLOOR);
+                    }
                 }
             }
         }
