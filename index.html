@@ -203,6 +203,7 @@
             <button onclick="game.undo()">↶ Undo</button>
             <button onclick="game.reset()">⟲ Reset</button>
             <button onclick="game.nextLevel()">Next</button>
+            <button onclick="game.generateLevel()" style="background: #4a5a3a; border-color: #6a8a5a;">🎲 Generate</button>
         </div>
     </div>
 
@@ -210,6 +211,7 @@
         Use Arrow Keys, WASD, or touch controls • Push all 📦 onto 🎯 to win
     </div>
 
+    <script src="generator.js"></script>
     <script>
         // Game constants
         const TILE_SIZE = 60;
@@ -400,6 +402,31 @@
                 this.loadLevel(this.currentLevel + 1);
             }
 
+            generateLevel() {
+                // Create a new procedurally generated level
+                const generator = new SokobanGenerator(8, 8, 3, 30);
+                const generatedLevel = generator.generate();
+
+                // Load it as a custom level
+                this.currentLevel = -1; // Mark as generated
+                this.width = generatedLevel.width;
+                this.height = generatedLevel.height;
+                this.grid = generatedLevel.grid;
+                this.playerX = generatedLevel.playerX;
+                this.playerY = generatedLevel.playerY;
+                this.moves = 0;
+                this.pushes = 0;
+                this.history = [];
+                this.won = false;
+
+                // Update canvas size
+                this.canvas.width = this.width * TILE_SIZE;
+                this.canvas.height = this.height * TILE_SIZE;
+
+                this.updateUI();
+                this.render();
+            }
+
             setupControls() {
                 document.addEventListener('keydown', (e) => {
                     if (this.won) return;
@@ -541,7 +568,8 @@
             }
 
             updateUI() {
-                document.getElementById('level-num').textContent = this.currentLevel + 1;
+                const levelText = this.currentLevel === -1 ? 'Generated' : this.currentLevel + 1;
+                document.getElementById('level-num').textContent = levelText;
                 document.getElementById('move-count').textContent = this.moves;
                 document.getElementById('push-count').textContent = this.pushes;
                 document.getElementById('win-message').textContent = '';
