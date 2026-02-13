@@ -149,6 +149,19 @@ class SokobanGenerator {
         return false;
     }
 
+    isAdjacentToWall(grid, x, y) {
+        // Check if position is next to any wall
+        const up = grid[(y - 1) * this.width + x];
+        const down = grid[(y + 1) * this.width + x];
+        const left = grid[y * this.width + (x - 1)];
+        const right = grid[y * this.width + (x + 1)];
+
+        return up === this.TILES.WALL ||
+               down === this.TILES.WALL ||
+               left === this.TILES.WALL ||
+               right === this.TILES.WALL;
+    }
+
     isBoxAccessible(grid, boxPos, otherBoxes, targets) {
         // Check if a box position allows the player to access it from enough sides
         // to potentially push it toward any target
@@ -308,6 +321,10 @@ class SokobanGenerator {
 
                 // Check new box position isn't a deadlock
                 if (this.isDeadlock(state.grid, newBoxPos, targets)) continue;
+
+                // Don't pull boxes to positions adjacent to walls
+                // (Unless that position is a target)
+                if (!targets.includes(newBoxPos) && this.isAdjacentToWall(state.grid, newBoxX, newBoxY)) continue;
 
                 // Also check if player can access this box from multiple sides
                 // (needed to push it toward targets later)
