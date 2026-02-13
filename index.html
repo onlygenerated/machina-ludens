@@ -131,6 +131,93 @@
             text-align: center;
         }
 
+        #breeding-panel {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 2px solid #444;
+        }
+
+        #breeding-panel.active {
+            display: block;
+        }
+
+        .breeding-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .generation-info {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .candidate-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .candidate {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 6px;
+            border: 2px solid #444;
+        }
+
+        .candidate.selected {
+            border-color: #4ade80;
+        }
+
+        .candidate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .genome-stats {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .genome-stats div {
+            margin: 3px 0;
+        }
+
+        .rating {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .star-btn {
+            background: #3a3a3a;
+            border: 1px solid #555;
+            color: #666;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 1.2em;
+        }
+
+        .star-btn.active {
+            color: #fbbf24;
+            background: #4a4a3a;
+        }
+
+        .breed-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
         #info {
             display: flex;
             justify-content: space-between;
@@ -204,6 +291,7 @@
             <button onclick="game.reset()">⟲ Reset</button>
             <button onclick="game.nextLevel()">Next</button>
             <button onclick="game.generateLevel()" style="background: #4a5a3a; border-color: #6a8a5a;">🎲 Generate</button>
+            <button onclick="game.toggleBreedingMode()" style="background: #5a3a5a; border-color: #8a6a8a;">🧬 Breed</button>
         </div>
     </div>
 
@@ -211,7 +299,30 @@
         Use Arrow Keys, WASD, or touch controls • Push all 📦 onto 🎯 to win
     </div>
 
+    <div id="breeding-panel">
+        <div class="breeding-header">
+            <h2>🧬 Evolution Lab</h2>
+            <div class="generation-info">
+                Generation: <span id="gen-number">0</span>
+            </div>
+        </div>
+
+        <p style="color: #888; margin-bottom: 20px;">
+            Play each level and rate it. Higher-rated genomes will breed to create the next generation.
+        </p>
+
+        <div id="candidate-grid" class="candidate-grid">
+            <!-- Candidates will be inserted here -->
+        </div>
+
+        <div class="breed-controls">
+            <button onclick="game.evolvePopulation()">🧬 Breed Next Generation</button>
+            <button onclick="game.toggleBreedingMode()">← Back to Game</button>
+        </div>
+    </div>
+
     <script src="generator.js"></script>
+    <script src="genome.js"></script>
     <script>
         // Game constants
         const TILE_SIZE = 60;
@@ -317,6 +428,12 @@
                 this.pushes = 0;
                 this.history = [];
                 this.won = false;
+
+                // Breeding mode state
+                this.breedingMode = false;
+                this.population = null;
+                this.candidates = [];
+                this.ratings = [];
 
                 this.loadLevel(0);
                 this.setupControls();
@@ -597,6 +714,146 @@
                 const px = this.playerX * TILE_SIZE + TILE_SIZE / 2;
                 const py = this.playerY * TILE_SIZE + TILE_SIZE / 2;
                 this.ctx.fillText(EMOJI[TILES.PLAYER], px, py);
+            }
+
+            // === BREEDING MODE METHODS ===
+
+            toggleBreedingMode() {
+                this.breedingMode = !this.breedingMode;
+
+                const gameContainer = document.getElementById('game-container');
+                const breedingPanel = document.getElementById('breeding-panel');
+
+                if (this.breedingMode) {
+                    // Initialize population if needed
+                    if (!this.population) {
+                        this.population = new Population(5); // Start with 5 genomes
+                    }
+
+                    // Show breeding panel, hide game
+                    gameContainer.style.display = 'none';
+                    breedingPanel.classList.add('active');
+
+                    this.displayCandidates();
+                } else {
+                    // Show game, hide breeding panel
+                    gameContainer.style.display = 'block';
+                    breedingPanel.classList.remove('active');
+                }
+            }
+
+            displayCandidates() {
+                const grid = document.getElementById('candidate-grid');
+                const genNumber = document.getElementById('gen-number');
+
+                genNumber.textContent = this.population.generation;
+
+                const genomes = this.population.getCurrentGeneration();
+                this.candidates = [];
+                this.ratings = new Array(genomes.length).fill(0);
+
+                grid.innerHTML = '';
+
+                genomes.forEach((genome, index) => {
+                    const candidate = document.createElement('div');
+                    candidate.className = 'candidate';
+                    candidate.id = `candidate-${index}`;
+
+                    const stats = genome.describe();
+                    const statsHTML = Object.entries(stats)
+                        .map(([key, val]) => `<div>${key}: ${val}</div>`)
+                        .join('');
+
+                    candidate.innerHTML = `
+                        <div class="candidate-header">
+                            <strong>Genome ${index + 1}</strong>
+                        </div>
+                        <div class="genome-stats">
+                            ${statsHTML}
+                        </div>
+                        <button onclick="game.playCandidate(${index})">▶ Play Level</button>
+                        <div class="rating">
+                            ${[1, 2, 3, 4, 5].map(star =>
+                                `<button class="star-btn" onclick="game.rateCandidate(${index}, ${star})">★</button>`
+                            ).join('')}
+                        </div>
+                    `;
+
+                    grid.appendChild(candidate);
+                    this.candidates.push({ genome, element: candidate });
+                });
+            }
+
+            playCandidate(index) {
+                const genome = this.candidates[index].genome;
+
+                // Generate level from this genome
+                const level = genome.generateLevel();
+
+                // Switch to game view temporarily
+                document.getElementById('game-container').style.display = 'block';
+                document.getElementById('breeding-panel').style.display = 'none';
+
+                // Load the generated level
+                this.currentLevel = -1;
+                this.width = level.width;
+                this.height = level.height;
+                this.grid = level.grid;
+                this.playerX = level.playerX;
+                this.playerY = level.playerY;
+                this.moves = 0;
+                this.pushes = 0;
+                this.history = [];
+                this.won = false;
+
+                this.canvas.width = this.width * TILE_SIZE;
+                this.canvas.height = this.height * TILE_SIZE;
+
+                this.updateUI();
+                this.render();
+
+                // Show message
+                this.showWin(`Playing Genome ${index + 1} - Press 🧬 Breed to return`);
+            }
+
+            rateCandidate(index, rating) {
+                this.ratings[index] = rating;
+
+                // Update star buttons
+                const candidate = document.getElementById(`candidate-${index}`);
+                const stars = candidate.querySelectorAll('.star-btn');
+
+                stars.forEach((star, i) => {
+                    if (i < rating) {
+                        star.classList.add('active');
+                    } else {
+                        star.classList.remove('active');
+                    }
+                });
+
+                candidate.classList.add('selected');
+            }
+
+            evolvePopulation() {
+                // Check if all candidates have been rated
+                const unrated = this.ratings.filter(r => r === 0).length;
+                if (unrated > 0) {
+                    alert(`Please rate all ${unrated} remaining level(s) before breeding!`);
+                    return;
+                }
+
+                // Evolve to next generation
+                this.population.evolve(this.ratings);
+
+                // Show stats
+                const stats = this.population.getStats();
+                console.log('Population Stats:', stats);
+
+                // Display new generation
+                this.displayCandidates();
+
+                // Show notification
+                alert(`Generation ${this.population.generation} created!\n\nAvg Grid Size: ${stats.averages.gridSize}\nAvg Boxes: ${stats.averages.boxCount}\nAvg Complexity: ${stats.averages.complexity}\nAvg Wall Density: ${stats.averages.wallDensity}`);
             }
         }
 
