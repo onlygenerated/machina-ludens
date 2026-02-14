@@ -40,34 +40,61 @@ class SokobanGenerator {
     generate() {
         // Keep trying until we get a valid level
         let attempts = 0;
-        while (attempts < 50) {
+        const failReasons = {};
+        const originalBoxCount = this.boxCount;
+
+        while (attempts < 100) {
             try {
-                const result = this.attemptGenerate();
-                if (result) return result;
+                // Progressive relaxation: reduce box count after repeated failures
+                if (attempts === 40 && this.boxCount > 2) {
+                    this.boxCount = Math.max(2, this.boxCount - 1);
+                    console.log(`[SokobanGen] Relaxing: boxCount → ${this.boxCount}`);
+                }
+                if (attempts === 70 && this.boxCount > 2) {
+                    this.boxCount = Math.max(2, this.boxCount - 1);
+                    console.log(`[SokobanGen] Relaxing further: boxCount → ${this.boxCount}`);
+                }
+
+                // After 90 failures, skip the distance check — a close-box
+                // puzzle is better than the fallback
+                const skipDistCheck = attempts >= 90;
+                const result = this.attemptGenerate(failReasons, skipDistCheck);
+                if (result) {
+                    console.log(`[SokobanGen] Success after ${attempts + 1} attempts (${this.width}x${this.height}, ${this.boxCount} boxes). Failures:`, failReasons);
+                    this.boxCount = originalBoxCount;
+                    return result;
+                }
             } catch (e) {
-                // Try again
+                failReasons['exception'] = (failReasons['exception'] || 0) + 1;
             }
             attempts++;
         }
 
-        // Fallback: return a simple level
+        console.warn(`[SokobanGen] All ${attempts} attempts failed (${this.width}x${this.height}). Failures:`, failReasons, '— using fallback');
+        this.boxCount = originalBoxCount;
         return this.createSimpleFallback();
     }
 
-    attemptGenerate() {
+    attemptGenerate(failReasons = {}, skipDistCheck = false) {
         // Step 1: Create simple room
         const grid = this.createSimpleRoom();
 
         // Step 2: Place TARGETS (these stay fixed throughout)
         const targets = this.placeSafeTargets(grid);
-        if (targets.length === 0) return null;
+        if (targets.length === 0) {
+            failReasons['no_targets'] = (failReasons['no_targets'] || 0) + 1;
+            return null;
+        }
 
         // Step 3: Place BOXES on targets (solved state - this is our starting point for reverse-play)
         const boxes = [...targets];
 
         // Step 4: Place player adjacent to boxes
         let playerPos = this.placePlayerNearBoxes(grid, boxes);
-        if (playerPos === -1) return null;
+        if (playerPos === -1) {
+            failReasons['no_player_pos'] = (failReasons['no_player_pos'] || 0) + 1;
+            return null;
+        }
 
         // Step 5: PULL boxes away from targets (reverse moves)
         // This scatters the boxes while keeping targets in place
@@ -81,6 +108,7 @@ class SokobanGenerator {
         // Step 7: Validate no boxes ended up in deadlocks
         for (const box of state.boxes) {
             if (this.isDeadlock(state.grid, box, targets)) {
+                failReasons['deadlock'] = (failReasons['deadlock'] || 0) + 1;
                 return null; // Invalid, try again
             }
         }
@@ -88,7 +116,33 @@ class SokobanGenerator {
         // Step 7b: Validate no boxes are on targets (we want an unsolved puzzle)
         for (const box of state.boxes) {
             if (targets.includes(box)) {
+                failReasons['box_on_target'] = (failReasons['box_on_target'] || 0) + 1;
                 return null; // Box still on target, try again
+            }
+        }
+
+        // Step 7c: Validate boxes are far enough from targets on average
+        if (!skipDistCheck) {
+            const minAvgDist = this.width <= 14
+                ? Math.max(2, Math.floor(Math.max(this.width, this.height) / 5))
+                : Math.max(3, Math.floor(Math.max(this.width, this.height) / 4));
+            let totalDist = 0;
+            for (const box of state.boxes) {
+                const bx = box % this.width;
+                const by = Math.floor(box / this.width);
+                // Distance to nearest target
+                let nearest = Infinity;
+                for (const t of targets) {
+                    const tx = t % this.width;
+                    const ty = Math.floor(t / this.width);
+                    nearest = Math.min(nearest, Math.abs(bx - tx) + Math.abs(by - ty));
+                }
+                totalDist += nearest;
+            }
+            const avgDist = totalDist / state.boxes.length;
+            if (avgDist < minAvgDist) {
+                failReasons['boxes_too_close'] = (failReasons['boxes_too_close'] || 0) + 1;
+                return null;
             }
         }
 
@@ -99,6 +153,19 @@ class SokobanGenerator {
     }
 
     createSimpleRoom() {
+        if (this.width <= 10 && this.height <= 10) {
+            // Small grids: open room with obstacles
+            return this.createSimpleRoomLegacy();
+        }
+        if (this.width <= 14 && this.height <= 14) {
+            // Medium grids: open room with partition walls for structure
+            return this.createPartitionedRoom();
+        }
+        // Large grids: carve rooms and corridors
+        return this.createRoomsAndCorridors();
+    }
+
+    createSimpleRoomLegacy() {
         const grid = [];
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
@@ -127,12 +194,263 @@ class SokobanGenerator {
         return grid;
     }
 
+    createPartitionedRoom() {
+        // Open rectangle with 1-2 interior partition walls that create sub-rooms.
+        // More reliable than rooms-and-corridors for medium grids (11-14).
+        const grid = [];
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                if (x === 0 || x === this.width - 1 ||
+                    y === 0 || y === this.height - 1) {
+                    grid.push(this.TILES.WALL);
+                } else {
+                    grid.push(this.TILES.FLOOR);
+                }
+            }
+        }
+
+        // Add 1-2 partition walls with gaps to create sub-rooms
+        const numPartitions = 1 + Math.floor(Math.random() * 2);
+
+        for (let i = 0; i < numPartitions; i++) {
+            const isVertical = Math.random() < 0.5;
+
+            if (isVertical) {
+                // Vertical partition: pick x position avoiding edges
+                const wx = 3 + Math.floor(Math.random() * Math.max(1, this.width - 6));
+                // Gap of 2-3 tiles for movement
+                const gapSize = 2 + Math.floor(Math.random() * 2);
+                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4 - gapSize));
+
+                for (let y = 1; y < this.height - 1; y++) {
+                    if (y < gapStart || y >= gapStart + gapSize) {
+                        grid[y * this.width + wx] = this.TILES.WALL;
+                    }
+                }
+            } else {
+                // Horizontal partition
+                const wy = 3 + Math.floor(Math.random() * Math.max(1, this.height - 6));
+                const gapSize = 2 + Math.floor(Math.random() * 2);
+                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4 - gapSize));
+
+                for (let x = 1; x < this.width - 1; x++) {
+                    if (x < gapStart || x >= gapStart + gapSize) {
+                        grid[wy * this.width + x] = this.TILES.WALL;
+                    }
+                }
+            }
+        }
+
+        // Add a few small obstacles (less aggressive than legacy since partitions provide structure)
+        const numObstacles = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < numObstacles; i++) {
+            const cx = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4));
+            const cy = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4));
+            this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+            if (Math.random() < 0.5) {
+                this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+            } else {
+                this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+            }
+        }
+
+        return grid;
+    }
+
+    createRoomsAndCorridors() {
+        // Fill entire grid with walls
+        const grid = new Array(this.width * this.height).fill(this.TILES.WALL);
+
+        // Calculate how many rooms to place
+        const interiorW = this.width - 2;
+        const interiorH = this.height - 2;
+        const interiorArea = interiorW * interiorH;
+        const roomAreaTarget = Math.max(15, Math.round(80 - this.wallDensity * 200));
+        const roomCount = Math.max(2, Math.floor(interiorArea / roomAreaTarget));
+
+        // Room size limits scale with grid size
+        const minSide = 3;
+        const maxSide = Math.min(7, Math.max(4, Math.floor(Math.min(this.width, this.height) / 4)));
+
+        // Place rooms with overlap rejection
+        const rooms = [];
+        let attempts = 0;
+        const maxAttempts = roomCount * 20;
+
+        while (rooms.length < roomCount && attempts < maxAttempts) {
+            attempts++;
+            const rw = minSide + Math.floor(Math.random() * (maxSide - minSide + 1));
+            const rh = minSide + Math.floor(Math.random() * (maxSide - minSide + 1));
+            const rx = 2 + Math.floor(Math.random() * Math.max(1, this.width - rw - 3));
+            const ry = 2 + Math.floor(Math.random() * Math.max(1, this.height - rh - 3));
+
+            // Check for overlap with existing rooms (1-tile margin)
+            let overlaps = false;
+            for (const room of rooms) {
+                if (rx - 1 < room.x + room.w && rx + rw + 1 > room.x &&
+                    ry - 1 < room.y + room.h && ry + rh + 1 > room.y) {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (overlaps) continue;
+
+            // Carve the room
+            for (let dy = 0; dy < rh; dy++) {
+                for (let dx = 0; dx < rw; dx++) {
+                    const idx = (ry + dy) * this.width + (rx + dx);
+                    grid[idx] = this.TILES.FLOOR;
+                }
+            }
+            rooms.push({ x: rx, y: ry, w: rw, h: rh,
+                cx: Math.floor(rx + rw / 2), cy: Math.floor(ry + rh / 2) });
+        }
+
+        // Connect rooms with L-shaped corridors
+        for (let i = 1; i < rooms.length; i++) {
+            this.carveCorridor(grid, rooms[i - 1].cx, rooms[i - 1].cy,
+                                     rooms[i].cx, rooms[i].cy);
+        }
+
+        // Add 1-2 extra corridors for loops
+        const extras = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < extras && rooms.length >= 2; i++) {
+            const a = Math.floor(Math.random() * rooms.length);
+            let b = Math.floor(Math.random() * rooms.length);
+            if (b === a) b = (a + 1) % rooms.length;
+            this.carveCorridor(grid, rooms[a].cx, rooms[a].cy,
+                                     rooms[b].cx, rooms[b].cy);
+        }
+
+        // Verify connectivity via BFS and fix isolated areas
+        this.ensureConnectivity(grid);
+
+        // Add small wall bumps inside larger rooms for variety
+        for (const room of rooms) {
+            if (room.w >= 5 && room.h >= 5) {
+                const bumps = 1 + Math.floor(Math.random() * 2);
+                for (let b = 0; b < bumps; b++) {
+                    const bx = room.x + 1 + Math.floor(Math.random() * (room.w - 2));
+                    const by = room.y + 1 + Math.floor(Math.random() * (room.h - 2));
+                    this.setTileIfFloor(grid, bx, by, this.TILES.WALL);
+                }
+            }
+        }
+
+        return grid;
+    }
+
+    carveCorridor(grid, x1, y1, x2, y2) {
+        // L-shaped corridor: horizontal then vertical (or vice versa randomly)
+        if (Math.random() < 0.5) {
+            this.carveHLine(grid, x1, x2, y1);
+            this.carveVLine(grid, y1, y2, x2);
+        } else {
+            this.carveVLine(grid, y1, y2, x1);
+            this.carveHLine(grid, x1, x2, y2);
+        }
+    }
+
+    carveHLine(grid, x1, x2, y) {
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        for (let x = minX; x <= maxX; x++) {
+            if (x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
+                grid[y * this.width + x] = this.TILES.FLOOR;
+            }
+        }
+    }
+
+    carveVLine(grid, y1, y2, x) {
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+        for (let y = minY; y <= maxY; y++) {
+            if (x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
+                grid[y * this.width + x] = this.TILES.FLOOR;
+            }
+        }
+    }
+
+    floodFillFloor(grid, startIdx) {
+        // BFS from startIdx, returning set of all reachable FLOOR tiles
+        const visited = new Set([startIdx]);
+        const queue = [startIdx];
+        let head = 0;
+        while (head < queue.length) {
+            const cur = queue[head++];
+            const cx = cur % this.width;
+            const cy = Math.floor(cur / this.width);
+            for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+                const nx = cx + dx, ny = cy + dy;
+                if (!this.isValidPosition(nx, ny)) continue;
+                const nIdx = ny * this.width + nx;
+                if (visited.has(nIdx)) continue;
+                if (grid[nIdx] !== this.TILES.FLOOR) continue;
+                visited.add(nIdx);
+                queue.push(nIdx);
+            }
+        }
+        return visited;
+    }
+
+    ensureConnectivity(grid) {
+        // Find all floor tiles
+        const floorTiles = [];
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] === this.TILES.FLOOR) floorTiles.push(i);
+        }
+        if (floorTiles.length === 0) return;
+
+        // BFS from first floor tile
+        const mainRegion = this.floodFillFloor(grid, floorTiles[0]);
+
+        // Find isolated tiles and connect them
+        for (const tile of floorTiles) {
+            if (!mainRegion.has(tile)) {
+                this.connectIsolatedTile(grid, tile, mainRegion);
+                // Re-flood to update connected region
+                const expanded = this.floodFillFloor(grid, floorTiles[0]);
+                for (const t of expanded) mainRegion.add(t);
+            }
+        }
+    }
+
+    connectIsolatedTile(grid, tileIdx, mainRegion) {
+        // Carve a corridor from tileIdx toward the nearest tile in mainRegion
+        const tx = tileIdx % this.width;
+        const ty = Math.floor(tileIdx / this.width);
+
+        // Find nearest main region tile
+        let nearestIdx = -1;
+        let nearestDist = Infinity;
+        for (const mIdx of mainRegion) {
+            const mx = mIdx % this.width;
+            const my = Math.floor(mIdx / this.width);
+            const dist = Math.abs(mx - tx) + Math.abs(my - ty);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestIdx = mIdx;
+            }
+        }
+
+        if (nearestIdx === -1) return;
+
+        const nx = nearestIdx % this.width;
+        const ny = Math.floor(nearestIdx / this.width);
+        this.carveCorridor(grid, tx, ty, nx, ny);
+    }
+
     addStructuredObstacles(grid) {
-        // Add 1-3 small obstacle patterns in the middle of the board
-        const numObstacles = 1 + Math.floor(Math.random() * 3);
+        // Scale obstacle count with grid size, but cap for small grids
+        const gridSize = Math.max(this.width, this.height);
+        const numObstacles = gridSize <= 10
+            ? 1 + Math.floor(Math.random() * 2)   // 1-2 for small grids
+            : 2 + Math.floor(gridSize / 5);        // 2+ for larger grids
 
         for (let i = 0; i < numObstacles; i++) {
-            const pattern = Math.floor(Math.random() * 4);
+            // Small grids: only use simpler patterns (0-3) to avoid deadlock-heavy shapes
+            const maxPattern = gridSize <= 10 ? 4 : 7;
+            const pattern = Math.floor(Math.random() * maxPattern);
 
             // Pick a random center point (avoiding edges)
             const cx = 3 + Math.floor(Math.random() * Math.max(1, this.width - 6));
@@ -142,11 +460,13 @@ class SokobanGenerator {
                 case 0: // Single wall
                     this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
                     break;
-                case 1: // 2x1 horizontal
+                case 1: // 3-tile horizontal line
+                    this.setTileIfFloor(grid, cx - 1, cy, this.TILES.WALL);
                     this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
                     this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
                     break;
-                case 2: // 1x2 vertical
+                case 2: // 3-tile vertical line
+                    this.setTileIfFloor(grid, cx, cy - 1, this.TILES.WALL);
                     this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
                     this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
                     break;
@@ -155,6 +475,36 @@ class SokobanGenerator {
                     this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
                     this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
                     break;
+                case 4: // T-shape (horizontal bar + down stem)
+                    this.setTileIfFloor(grid, cx - 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    break;
+                case 5: // 2x2 block
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy + 1, this.TILES.WALL);
+                    break;
+                case 6: // 2x1 horizontal (small)
+                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    break;
+            }
+        }
+
+        // Add a random interior wall segment to break up the open space
+        const maxSegLen = gridSize <= 10 ? 2 : 4;
+        const segLen = 2 + Math.floor(Math.random() * Math.max(1, maxSegLen - 1));
+        const horizontal = Math.random() < 0.5;
+        const sx = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4 - (horizontal ? segLen : 0)));
+        const sy = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4 - (horizontal ? 0 : segLen)));
+        for (let s = 0; s < segLen; s++) {
+            if (horizontal) {
+                this.setTileIfFloor(grid, sx + s, sy, this.TILES.WALL);
+            } else {
+                this.setTileIfFloor(grid, sx, sy + s, this.TILES.WALL);
             }
         }
     }
@@ -168,7 +518,6 @@ class SokobanGenerator {
     }
 
     placeSafeTargets(grid) {
-        const targets = [];
         const safeTiles = [];
 
         // Find floor tiles that aren't in corners or against walls
@@ -184,16 +533,53 @@ class SokobanGenerator {
             }
         }
 
-        // Shuffle and pick targets
         this.shuffle(safeTiles);
         const count = Math.min(this.boxCount, safeTiles.length);
+        const minTargetDist = this.width <= 14
+            ? Math.max(2, Math.floor(Math.max(this.width, this.height) / 5))
+            : Math.max(3, Math.floor(Math.max(this.width, this.height) / 4));
 
-        for (let i = 0; i < count; i++) {
-            targets.push(safeTiles[i]);
-            grid[safeTiles[i]] = this.TILES.TARGET;
+        // Greedy placement with minimum distance enforcement
+        let targets = this.placeWithMinDistance(safeTiles, count, minTargetDist);
+
+        // Fallback: retry with half distance if too few placed
+        if (targets.length < count) {
+            targets = this.placeWithMinDistance(safeTiles, count, Math.floor(minTargetDist / 2));
+        }
+
+        // Last resort: just take what we can get
+        if (targets.length < count) {
+            for (const tile of safeTiles) {
+                if (targets.length >= count) break;
+                if (!targets.includes(tile)) targets.push(tile);
+            }
+        }
+
+        for (const t of targets) {
+            grid[t] = this.TILES.TARGET;
         }
 
         return targets;
+    }
+
+    placeWithMinDistance(candidates, count, minDist) {
+        const placed = [];
+        for (const tile of candidates) {
+            if (placed.length >= count) break;
+            const tx = tile % this.width;
+            const ty = Math.floor(tile / this.width);
+            let tooClose = false;
+            for (const other of placed) {
+                const ox = other % this.width;
+                const oy = Math.floor(other / this.width);
+                if (Math.abs(tx - ox) + Math.abs(ty - oy) < minDist) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (!tooClose) placed.push(tile);
+        }
+        return placed;
     }
 
     isCornerOrWall(grid, x, y) {
@@ -241,9 +627,10 @@ class SokobanGenerator {
                right === this.TILES.WALL;
     }
 
-    isBoxAccessible(grid, boxPos, otherBoxes, targets) {
+    isBoxAccessible(grid, boxPos, boxSet, targetSet) {
         // Check if a box position allows the player to access it from enough sides
-        // to potentially push it toward any target
+        // to potentially push it toward any target.
+        // boxSet and targetSet should be Sets for O(1) lookups.
 
         const x = boxPos % this.width;
         const y = Math.floor(boxPos / this.width);
@@ -254,24 +641,25 @@ class SokobanGenerator {
         const left = y * this.width + (x - 1);
         const right = y * this.width + (x + 1);
 
-        const upAccessible = grid[up] !== this.TILES.WALL && !otherBoxes.includes(up);
-        const downAccessible = grid[down] !== this.TILES.WALL && !otherBoxes.includes(down);
-        const leftAccessible = grid[left] !== this.TILES.WALL && !otherBoxes.includes(left);
-        const rightAccessible = grid[right] !== this.TILES.WALL && !otherBoxes.includes(right);
+        const upAccessible = grid[up] !== this.TILES.WALL && !boxSet.has(up);
+        const downAccessible = grid[down] !== this.TILES.WALL && !boxSet.has(down);
+        const leftAccessible = grid[left] !== this.TILES.WALL && !boxSet.has(left);
+        const rightAccessible = grid[right] !== this.TILES.WALL && !boxSet.has(right);
 
         const accessibleSides = [upAccessible, downAccessible, leftAccessible, rightAccessible].filter(Boolean).length;
 
         // Need at least 2 accessible sides to maneuver
         // (Unless box is already on target)
-        if (targets.includes(boxPos)) return true;
+        if (targetSet.has(boxPos)) return true;
 
         return accessibleSides >= 2;
     }
 
-    canReachAroundBox(grid, boxPos, otherBoxes) {
+    canReachAroundBox(grid, boxPos, otherBoxSet) {
         // Check if the player can navigate from one pushable side of the box
         // to another via a walkable path (a "loop"), enabling the box to be pushed
         // from multiple directions even when adjacent to walls.
+        // otherBoxSet should be a Set for O(1) lookups.
 
         const bx = boxPos % this.width;
         const by = Math.floor(boxPos / this.width);
@@ -290,7 +678,7 @@ class SokobanGenerator {
             const ny = by + dir.dy;
             if (!this.isValidPosition(nx, ny)) continue;
             const nPos = ny * this.width + nx;
-            if (grid[nPos] !== this.TILES.WALL && !otherBoxes.includes(nPos)) {
+            if (grid[nPos] !== this.TILES.WALL && !otherBoxSet.has(nPos)) {
                 pushSides.push({ pos: nPos, axis: dir.axis });
             }
         }
@@ -301,7 +689,7 @@ class SokobanGenerator {
         for (let i = 0; i < pushSides.length; i++) {
             for (let j = i + 1; j < pushSides.length; j++) {
                 if (pushSides[i].axis === pushSides[j].axis) continue;
-                if (this.bfsConnected(grid, pushSides[i].pos, pushSides[j].pos, boxPos, otherBoxes)) {
+                if (this.bfsConnected(grid, pushSides[i].pos, pushSides[j].pos, boxPos, otherBoxSet)) {
                     return true;
                 }
             }
@@ -310,14 +698,16 @@ class SokobanGenerator {
         return false;
     }
 
-    bfsConnected(grid, from, to, excludeBox, excludeBoxes) {
+    bfsConnected(grid, from, to, excludeBox, excludeBoxSet) {
         // BFS to check if 'from' and 'to' are connected via walkable tiles,
         // excluding the box position itself and other boxes.
+        // excludeBoxSet should be a Set for O(1) lookups.
         const queue = [from];
         const visited = new Set([from]);
+        let head = 0;
 
-        while (queue.length > 0) {
-            const current = queue.shift();
+        while (head < queue.length) {
+            const current = queue[head++];
             if (current === to) return true;
 
             const cx = current % this.width;
@@ -332,7 +722,7 @@ class SokobanGenerator {
                 if (visited.has(nPos)) continue;
                 if (grid[nPos] === this.TILES.WALL) continue;
                 if (nPos === excludeBox) continue;
-                if (excludeBoxes.includes(nPos)) continue;
+                if (excludeBoxSet.has(nPos)) continue;
                 visited.add(nPos);
                 queue.push(nPos);
             }
@@ -341,29 +731,53 @@ class SokobanGenerator {
         return false;
     }
 
-    getPlayerReachable(grid, playerPos, boxes) {
+    getPlayerReachable(grid, playerPos, boxSet) {
         // BFS flood-fill from player position.
         // Walls and boxes are impassable. Returns a Set of all
         // positions the player can walk to.
+        // boxSet should be a Set for O(1) lookups.
         const reachable = new Set([playerPos]);
         const queue = [playerPos];
+        let head = 0;
 
-        while (queue.length > 0) {
-            const current = queue.shift();
-            const cx = current % this.width;
-            const cy = Math.floor(current / this.width);
+        const w = this.width;
+        const h = this.height;
 
-            const offsets = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-            for (const [dx, dy] of offsets) {
-                const nx = cx + dx;
-                const ny = cy + dy;
-                if (!this.isValidPosition(nx, ny)) continue;
-                const nPos = ny * this.width + nx;
-                if (reachable.has(nPos)) continue;
-                if (grid[nPos] === this.TILES.WALL) continue;
-                if (boxes.includes(nPos)) continue;
-                reachable.add(nPos);
-                queue.push(nPos);
+        while (head < queue.length) {
+            const current = queue[head++];
+            const cx = current % w;
+            const cy = (current - cx) / w;
+
+            // Inline the 4 neighbors to avoid array allocation + destructuring
+            let nx, ny, nPos;
+
+            nx = cx; ny = cy - 1;
+            if (ny >= 0) {
+                nPos = current - w;
+                if (!reachable.has(nPos) && grid[nPos] !== 1 && !boxSet.has(nPos)) {
+                    reachable.add(nPos); queue.push(nPos);
+                }
+            }
+            nx = cx; ny = cy + 1;
+            if (ny < h) {
+                nPos = current + w;
+                if (!reachable.has(nPos) && grid[nPos] !== 1 && !boxSet.has(nPos)) {
+                    reachable.add(nPos); queue.push(nPos);
+                }
+            }
+            nx = cx - 1;
+            if (nx >= 0) {
+                nPos = current - 1;
+                if (!reachable.has(nPos) && grid[nPos] !== 1 && !boxSet.has(nPos)) {
+                    reachable.add(nPos); queue.push(nPos);
+                }
+            }
+            nx = cx + 1;
+            if (nx < w) {
+                nPos = current + 1;
+                if (!reachable.has(nPos) && grid[nPos] !== 1 && !boxSet.has(nPos)) {
+                    reachable.add(nPos); queue.push(nPos);
+                }
             }
         }
 
@@ -470,6 +884,10 @@ class SokobanGenerator {
             playerPos: playerPos
         };
 
+        // Use a Set for O(1) box lookups (kept in sync with state.boxes array)
+        const boxSet = new Set(state.boxes);
+        const targetSet = new Set(targets);
+
         const moves = [
             [0, -1],  // up
             [0, 1],   // down
@@ -479,16 +897,16 @@ class SokobanGenerator {
 
         let successfulMoves = 0;
 
-        for (let step = 0; step < this.complexity * 3 && successfulMoves < this.complexity; step++) {
+        // Cache player reachability — only recompute after a successful pull
+        let reachable = this.getPlayerReachable(state.grid, state.playerPos, boxSet);
+
+        const maxSteps = this.complexity * 3;
+        for (let step = 0; step < maxSteps && successfulMoves < this.complexity; step++) {
             // Pick random box
             const boxIdx = Math.floor(Math.random() * state.boxes.length);
             const boxPos = state.boxes[boxIdx];
             const boxX = boxPos % this.width;
             const boxY = Math.floor(boxPos / this.width);
-
-            // Compute player reachability once per step (BFS flood-fill
-            // from current player position, treating walls and boxes as impassable)
-            const reachable = this.getPlayerReachable(state.grid, state.playerPos, state.boxes);
 
             this.shuffle(moves);
 
@@ -511,11 +929,11 @@ class SokobanGenerator {
 
                 // newBoxPos must be empty floor (box destination)
                 if (state.grid[newBoxPos] === this.TILES.WALL) continue;
-                if (state.boxes.includes(newBoxPos)) continue;
+                if (boxSet.has(newBoxPos)) continue;
 
                 // playerDest must be empty floor (player steps there during pull)
                 if (state.grid[playerDest] === this.TILES.WALL) continue;
-                if (state.boxes.includes(playerDest)) continue;
+                if (boxSet.has(playerDest)) continue;
 
                 // Player must be able to walk to newBoxPos to initiate the pull
                 if (!reachable.has(newBoxPos)) continue;
@@ -524,21 +942,29 @@ class SokobanGenerator {
                 if (this.isDeadlock(state.grid, newBoxPos, targets)) continue;
 
                 // Quick filter: need at least 2 accessible sides
-                if (!this.isBoxAccessible(state.grid, newBoxPos, state.boxes, targets)) continue;
+                if (!this.isBoxAccessible(state.grid, newBoxPos, boxSet, targetSet)) continue;
 
-                // Loop check: verify paths exist around the box for multi-axis pushing
-                if (!targets.includes(newBoxPos)) {
-                    const otherBoxes = state.boxes.filter((_, idx) => idx !== boxIdx);
-                    if (!this.canReachAroundBox(state.grid, newBoxPos, otherBoxes)) continue;
+                // Loop check: only apply expensive BFS loop check when box is near a wall
+                if (!targetSet.has(newBoxPos) && this.isAdjacentToWall(state.grid, newBoxX, newBoxY)) {
+                    const otherBoxSet = new Set(boxSet);
+                    otherBoxSet.delete(boxPos);
+                    if (!this.canReachAroundBox(state.grid, newBoxPos, otherBoxSet)) continue;
                 }
 
-                // Valid pull!
+                // Valid pull! Update state and box Set
+                boxSet.delete(boxPos);
+                boxSet.add(newBoxPos);
                 state.boxes[boxIdx] = newBoxPos;
                 state.playerPos = playerDest;
                 successfulMoves++;
+
+                // Recompute reachability after state changed
+                reachable = this.getPlayerReachable(state.grid, state.playerPos, boxSet);
                 break;
             }
         }
+
+        console.log(`[SokobanGen] reversePlay: ${successfulMoves}/${this.complexity} moves achieved`);
 
         return state;
     }
@@ -583,21 +1009,38 @@ class SokobanGenerator {
     }
 
     createSimpleFallback() {
-        // Simple 7x7 level as fallback
+        // Generate a minimal playable level at the requested dimensions
+        const grid = [];
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                if (x === 0 || x === this.width - 1 ||
+                    y === 0 || y === this.height - 1) {
+                    grid.push(this.TILES.WALL);
+                } else {
+                    grid.push(this.TILES.FLOOR);
+                }
+            }
+        }
+
+        // Place 1 box and 1 target spread apart, with player nearby
+        const midX = Math.floor(this.width / 2);
+        const midY = Math.floor(this.height / 2);
+        const targetIdx = midY * this.width + (midX + 2);
+        const boxIdx = midY * this.width + (midX - 1);
+        const playerX = Math.max(1, midX - 2);
+        const playerY = Math.min(this.height - 2, midY + 1);
+        const playerIdx = playerY * this.width + playerX;
+
+        grid[targetIdx] = this.TILES.TARGET;
+        grid[boxIdx] = this.TILES.BOX;
+        grid[playerIdx] = this.TILES.PLAYER;
+
         return {
-            width: 7,
-            height: 7,
-            grid: [
-                1,1,1,1,1,1,1,
-                1,0,0,0,0,0,1,
-                1,0,0,3,0,0,1,
-                1,0,0,0,0,0,1,
-                1,0,4,0,2,0,1,
-                1,0,0,0,0,0,1,
-                1,1,1,1,1,1,1
-            ],
-            playerX: 2,
-            playerY: 4
+            width: this.width,
+            height: this.height,
+            grid: grid,
+            playerX: playerX,
+            playerY: playerY
         };
     }
 

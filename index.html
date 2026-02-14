@@ -232,6 +232,30 @@
             color: #666;
             font-size: 0.85em;
         }
+
+        #loading-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(26, 26, 30, 0.85);
+            color: #aaa;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #loading-overlay.visible { display: flex; }
+
+        .spinner {
+            width: 28px; height: 28px;
+            border: 3px solid #444;
+            border-top-color: #4ECDC4;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -245,7 +269,13 @@
             <div>Pushes: <span id="push-count">0</span></div>
         </div>
 
-        <canvas id="canvas" width="480" height="480"></canvas>
+        <div style="position: relative; display: inline-block;">
+            <canvas id="canvas" width="480" height="480"></canvas>
+            <div id="loading-overlay">
+                <div class="spinner"></div>
+                <div style="margin-top: 12px;">Generating...</div>
+            </div>
+        </div>
 
         <div id="win-message"></div>
 
@@ -320,7 +350,10 @@
     <script src="genome.js"></script>
     <script>
         // Game constants
-        const TILE_SIZE = 60;
+        const MAX_CANVAS = 600;
+        function getTileSize(w, h) {
+            return Math.max(4, Math.floor(MAX_CANVAS / Math.max(w, h)));
+        }
         const TILES = {
             FLOOR: 0,
             WALL: 1,
@@ -437,8 +470,8 @@
                 this.generationHistory = []; // Track stats over generations
                 this.curationStats = []; // Track curator choices
 
-                // Load saved state if available
-                this.loadState();
+                // Start fresh every page load (no persisted population)
+                // this.loadState();
 
                 this.setupControls();
                 this.setupTouchGestures();
@@ -510,8 +543,9 @@
                 this.playerY = Math.floor(playerIdx / this.width);
 
                 // Update canvas size
-                this.canvas.width = this.width * TILE_SIZE;
-                this.canvas.height = this.height * TILE_SIZE;
+                const ts = getTileSize(this.width, this.height);
+                this.canvas.width = this.width * ts;
+                this.canvas.height = this.height * ts;
 
                 this.updateUI();
                 this.render();
@@ -531,8 +565,9 @@
                     this.history = [];
                     this.won = false;
 
-                    this.canvas.width = this.width * TILE_SIZE;
-                    this.canvas.height = this.height * TILE_SIZE;
+                    const ts = getTileSize(this.width, this.height);
+                    this.canvas.width = this.width * ts;
+                    this.canvas.height = this.height * ts;
 
                     this.updateUI();
                     this.render();
@@ -547,6 +582,17 @@
             }
 
             generateLevel() {
+                // Show loading overlay, then defer heavy work so the browser can paint
+                const overlay = document.getElementById('loading-overlay');
+                overlay.classList.add('visible');
+
+                setTimeout(() => {
+                    this._doGenerateLevel();
+                    overlay.classList.remove('visible');
+                }, 20);
+            }
+
+            _doGenerateLevel() {
                 const genomes = this.population.getCurrentGeneration();
 
                 // Pick a random bot to be the curator
@@ -595,8 +641,9 @@
                 this.currentLevelRating = 0;
 
                 // Update canvas size
-                this.canvas.width = this.width * TILE_SIZE;
-                this.canvas.height = this.height * TILE_SIZE;
+                const ts = getTileSize(this.width, this.height);
+                this.canvas.width = this.width * ts;
+                this.canvas.height = this.height * ts;
 
                 this.updateUI();
                 this.render();
@@ -763,7 +810,7 @@
                 const ctx = this.ctx;
                 ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-                const ts = TILE_SIZE;
+                const ts = getTileSize(this.width, this.height);
                 const pad = Math.max(1, ts * 0.06); // padding for borders
 
                 // Draw grid

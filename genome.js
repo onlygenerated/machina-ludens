@@ -14,27 +14,37 @@ class Genome {
     // Generate random genes within valid ranges
     static randomGenes() {
         return {
-            // Grid dimensions (9-14) - larger boards on average
-            gridSize: 9 + Math.floor(Math.random() * 6),
+            // Grid dimensions (9-50) - wide range for variety
+            gridSize: 9 + Math.floor(Math.random() * 42),
 
-            // Number of boxes/targets (3-6) - more boxes
-            boxCount: 3 + Math.floor(Math.random() * 4),
+            // Number of boxes/targets (3-8)
+            boxCount: 3 + Math.floor(Math.random() * 6),
 
-            // Complexity: number of reverse-play moves (30-60) - more complex
-            complexity: 30 + Math.floor(Math.random() * 31),
+            // Complexity: number of reverse-play moves (30-80)
+            complexity: 30 + Math.floor(Math.random() * 51),
 
-            // Wall density: probability of internal walls (0.05-0.25) - more obstacles
+            // Wall density: probability of internal walls (0.05-0.25)
             wallDensity: 0.05 + Math.random() * 0.2
         };
     }
 
     // Create a level generator from this genome
     createGenerator() {
+        // Scale complexity with grid size so larger grids get more reverse-play moves
+        const effectiveComplexity = Math.max(this.genes.complexity,
+            Math.min(500, Math.round(this.genes.complexity * (this.genes.gridSize / 10)))
+        );
+
+        // Cap box count based on playable area so small grids aren't overloaded
+        const playableArea = (this.genes.gridSize - 2) * (this.genes.gridSize - 2);
+        const maxBoxes = Math.max(2, Math.floor(playableArea / 12));
+        const effectiveBoxCount = Math.min(this.genes.boxCount, maxBoxes);
+
         return new SokobanGenerator(
             this.genes.gridSize,      // width
             this.genes.gridSize,      // height (square grids for now)
-            this.genes.boxCount,
-            this.genes.complexity,
+            effectiveBoxCount,
+            effectiveComplexity,
             this.genes.wallDensity
         );
     }
@@ -65,30 +75,30 @@ class Genome {
 
         // Each gene has a chance to mutate
         if (Math.random() < mutationRate) {
-            // Mutate grid size (±1, clamped to 7-10)
-            mutated.gridSize = Math.max(7, Math.min(10,
-                mutated.gridSize + (Math.random() < 0.5 ? -1 : 1)
+            // Mutate grid size (±3, clamped to 7-80)
+            mutated.gridSize = Math.max(7, Math.min(80,
+                mutated.gridSize + Math.floor((Math.random() - 0.5) * 6 + 0.5)
             ));
         }
 
         if (Math.random() < mutationRate) {
-            // Mutate box count (±1, clamped to 2-5)
-            mutated.boxCount = Math.max(2, Math.min(5,
+            // Mutate box count (±1, clamped to 2-15)
+            mutated.boxCount = Math.max(2, Math.min(15,
                 mutated.boxCount + (Math.random() < 0.5 ? -1 : 1)
             ));
         }
 
         if (Math.random() < mutationRate) {
-            // Mutate complexity (±5, clamped to 20-50)
-            mutated.complexity = Math.max(20, Math.min(50,
-                mutated.complexity + (Math.random() < 0.5 ? -5 : 5)
+            // Mutate complexity (±10, clamped to 20-200)
+            mutated.complexity = Math.max(20, Math.min(200,
+                mutated.complexity + Math.floor((Math.random() - 0.5) * 20 + 0.5)
             ));
         }
 
         if (Math.random() < mutationRate) {
-            // Mutate wall density (±0.02, clamped to 0-0.15)
-            mutated.wallDensity = Math.max(0, Math.min(0.15,
-                mutated.wallDensity + (Math.random() - 0.5) * 0.04
+            // Mutate wall density (±0.03, clamped to 0.02-0.3)
+            mutated.wallDensity = Math.max(0.02, Math.min(0.3,
+                mutated.wallDensity + (Math.random() - 0.5) * 0.06
             ));
         }
 
@@ -274,9 +284,9 @@ class Bot {
         ];
 
         // Pick adjective based on dominant trait
-        const sizeIdx = Math.floor((genes.gridSize - 9) / 1); // 9-14 -> 0-5
-        const complexIdx = Math.floor((genes.complexity - 30) / 6); // 30-60 -> 0-5
-        const densityIdx = Math.floor(genes.wallDensity * 20); // 0-0.25 -> 0-5
+        const sizeIdx = Math.min(5, Math.floor((genes.gridSize - 7) / 15)); // 7-80 -> 0-5
+        const complexIdx = Math.min(5, Math.floor((genes.complexity - 20) / 36)); // 20-200 -> 0-5
+        const densityIdx = Math.min(5, Math.floor(genes.wallDensity / 0.06)); // 0-0.3 -> 0-5
 
         let adjective;
         const maxTrait = Math.max(sizeIdx, complexIdx, densityIdx);
@@ -301,28 +311,28 @@ class Bot {
         const traits = [];
 
         // Size-based traits
-        if (genes.gridSize >= 13) {
+        if (genes.gridSize >= 40) {
             traits.push('loves expansive spaces');
-        } else if (genes.gridSize <= 10) {
+        } else if (genes.gridSize <= 12) {
             traits.push('prefers cozy environments');
         }
 
         // Complexity-based traits
-        if (genes.complexity >= 50) {
+        if (genes.complexity >= 100) {
             traits.push('enjoys intricate challenges');
-        } else if (genes.complexity <= 35) {
+        } else if (genes.complexity <= 40) {
             traits.push('appreciates elegant simplicity');
         }
 
         // Density-based traits
-        if (genes.wallDensity >= 0.18) {
+        if (genes.wallDensity >= 0.2) {
             traits.push('creates elaborate mazes');
-        } else if (genes.wallDensity <= 0.08) {
+        } else if (genes.wallDensity <= 0.06) {
             traits.push('favors open layouts');
         }
 
         // Box count traits
-        if (genes.boxCount >= 5) {
+        if (genes.boxCount >= 8) {
             traits.push('ambitious with puzzles');
         } else if (genes.boxCount <= 3) {
             traits.push('believes in minimalism');
@@ -345,14 +355,14 @@ class Bot {
     static generateColors(genome) {
         const genes = genome.genes;
 
-        // Hue based on grid size (0-360)
-        const hue = (genes.gridSize - 9) * 60; // 9->0°, 14->300°
+        // Hue based on grid size (0-360), mapped from 7-80
+        const hue = Math.round(((genes.gridSize - 7) / 73) * 360) % 360;
 
-        // Saturation based on complexity (30-90%)
-        const saturation = 30 + (genes.complexity - 30) / 30 * 60;
+        // Saturation based on complexity (30-90%), mapped from 20-200
+        const saturation = 30 + Math.min(60, ((genes.complexity - 20) / 180) * 60);
 
-        // Lightness based on wall density (35-65%)
-        const lightness = 65 - (genes.wallDensity * 120);
+        // Lightness based on wall density (35-65%), mapped from 0-0.3
+        const lightness = 65 - Math.min(30, (genes.wallDensity / 0.3) * 30);
 
         const primary = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
         const secondary = `hsl(${(hue + 30) % 360}, ${saturation * 0.8}%, ${lightness * 0.9}%)`;
@@ -365,8 +375,8 @@ class Bot {
     drawSprite(ctx, x, y, size = 60) {
         const genes = this.genome.genes;
 
-        // Body size based on gridSize
-        const bodyScale = 0.6 + (genes.gridSize - 9) / 10; // 0.6-1.1
+        // Body size based on gridSize (7-80 → 0.6-1.1)
+        const bodyScale = 0.6 + Math.min(0.5, (genes.gridSize - 7) / 73 * 0.5);
         const bodyRadius = (size / 2) * bodyScale;
 
         // Draw body (circle)
@@ -404,8 +414,8 @@ class Bot {
             ctx.fill();
         }
 
-        // Draw pattern/spikes based on complexity and density
-        const spikeCount = Math.floor(genes.complexity / 10); // 3-6 spikes
+        // Draw pattern/spikes based on complexity and density (20-200 → 3-8 spikes)
+        const spikeCount = Math.max(3, Math.min(8, Math.floor(genes.complexity / 25)));
         const spikeLength = bodyRadius * (0.2 + genes.wallDensity);
 
         ctx.fillStyle = this.colors.accent;
@@ -439,17 +449,17 @@ class Bot {
         // Calculate normalized distance for each trait
         // Closer values = higher affinity
 
-        // Grid size: 9-14 range (span of 5)
-        const gridDiff = Math.abs(myGenes.gridSize - theirGenes.gridSize) / 5;
+        // Grid size: 7-80 range (span of 73)
+        const gridDiff = Math.abs(myGenes.gridSize - theirGenes.gridSize) / 73;
 
-        // Box count: 3-6 range (span of 3)
-        const boxDiff = Math.abs(myGenes.boxCount - theirGenes.boxCount) / 3;
+        // Box count: 2-15 range (span of 13)
+        const boxDiff = Math.abs(myGenes.boxCount - theirGenes.boxCount) / 13;
 
-        // Complexity: 30-60 range (span of 30)
-        const complexDiff = Math.abs(myGenes.complexity - theirGenes.complexity) / 30;
+        // Complexity: 20-200 range (span of 180)
+        const complexDiff = Math.abs(myGenes.complexity - theirGenes.complexity) / 180;
 
-        // Wall density: 0-0.25 range (span of 0.25)
-        const densityDiff = Math.abs(myGenes.wallDensity - theirGenes.wallDensity) / 0.25;
+        // Wall density: 0.02-0.3 range (span of 0.28)
+        const densityDiff = Math.abs(myGenes.wallDensity - theirGenes.wallDensity) / 0.28;
 
         // Average the differences (0 = identical, 1 = maximally different)
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff) / 4;
