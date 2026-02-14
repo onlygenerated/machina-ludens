@@ -1,22 +1,16 @@
+import { TILES } from './tiles.js';
+
 // Sokoban Level Generator using Reverse-Play Algorithm
 // Based on Taylor & Parberry (2011) approach
 
-class SokobanGenerator {
-    constructor(width = 8, height = 8, boxCount = 3, complexity = 20, wallDensity = 0) {
+export class SokobanGenerator {
+    constructor(width = 8, height = 8, boxCount = 3, complexity = 20, wallDensity = 0, styleWeights = null) {
         this.width = width;
         this.height = height;
         this.boxCount = boxCount;
         this.complexity = complexity;
         this.wallDensity = wallDensity; // 0-0.15, probability of internal walls
-
-        this.TILES = {
-            FLOOR: 0,
-            WALL: 1,
-            TARGET: 2,
-            BOX: 3,
-            PLAYER: 4,
-            BOX_ON_TARGET: 5
-        };
+        this.styleWeights = styleWeights || { clusters: 25, maze: 25, caves: 25, clusteredRooms: 25 };
     }
 
     // Static method to generate with random parameters
@@ -55,10 +49,7 @@ class SokobanGenerator {
                     console.log(`[SokobanGen] Relaxing further: boxCount → ${this.boxCount}`);
                 }
 
-                // After 90 failures, skip the distance check — a close-box
-                // puzzle is better than the fallback
-                const skipDistCheck = attempts >= 90;
-                const result = this.attemptGenerate(failReasons, skipDistCheck);
+                const result = this.attemptGenerate(failReasons, attempts);
                 if (result) {
                     console.log(`[SokobanGen] Success after ${attempts + 1} attempts (${this.width}x${this.height}, ${this.boxCount} boxes). Failures:`, failReasons);
                     this.boxCount = originalBoxCount;
@@ -70,12 +61,26 @@ class SokobanGenerator {
             attempts++;
         }
 
-        console.warn(`[SokobanGen] All ${attempts} attempts failed (${this.width}x${this.height}). Failures:`, failReasons, '— using fallback');
+        // Last-ditch: try 20 more times with only deadlock validation
+        // (skip spacing/moves checks — a close-box real level beats the static fallback)
+        this.boxCount = Math.max(2, Math.min(originalBoxCount, 3));
+        for (let i = 0; i < 20; i++) {
+            try {
+                const result = this.attemptGeneratePermissive(failReasons);
+                if (result) {
+                    console.log(`[SokobanGen] Permissive success after ${attempts + i + 1} total attempts (${this.width}x${this.height}, ${this.boxCount} boxes)`);
+                    this.boxCount = originalBoxCount;
+                    return result;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        console.warn(`[SokobanGen] All attempts failed (${this.width}x${this.height}). Failures:`, failReasons, '— using fallback');
         this.boxCount = originalBoxCount;
         return this.createSimpleFallback();
     }
 
-    attemptGenerate(failReasons = {}, skipDistCheck = false) {
+    attemptGenerate(failReasons = {}, attempt = 0) {
         // Step 1: Create simple room
         const grid = this.createSimpleRoom();
 
@@ -97,222 +102,391 @@ class SokobanGenerator {
         }
 
         // Step 5: PULL boxes away from targets (reverse moves)
-        // This scatters the boxes while keeping targets in place
         const state = this.reversePlay(grid, boxes, playerPos, targets);
 
-        // Step 6: After reverse-play:
-        // - Targets stay in their original positions
-        // - Boxes have been pulled to new scattered positions
-        // - Player is wherever the last pull left them
-
-        // Step 7: Validate no boxes ended up in deadlocks
+        // Step 6: Validate no boxes ended up in deadlocks
         for (const box of state.boxes) {
             if (this.isDeadlock(state.grid, box, targets)) {
                 failReasons['deadlock'] = (failReasons['deadlock'] || 0) + 1;
-                return null; // Invalid, try again
-            }
-        }
-
-        // Step 7b: Validate no boxes are on targets (we want an unsolved puzzle)
-        for (const box of state.boxes) {
-            if (targets.includes(box)) {
-                failReasons['box_on_target'] = (failReasons['box_on_target'] || 0) + 1;
-                return null; // Box still on target, try again
-            }
-        }
-
-        // Step 7c: Validate boxes are far enough from targets on average
-        if (!skipDistCheck) {
-            const minAvgDist = this.width <= 14
-                ? Math.max(2, Math.floor(Math.max(this.width, this.height) / 5))
-                : Math.max(3, Math.floor(Math.max(this.width, this.height) / 4));
-            let totalDist = 0;
-            for (const box of state.boxes) {
-                const bx = box % this.width;
-                const by = Math.floor(box / this.width);
-                // Distance to nearest target
-                let nearest = Infinity;
-                for (const t of targets) {
-                    const tx = t % this.width;
-                    const ty = Math.floor(t / this.width);
-                    nearest = Math.min(nearest, Math.abs(bx - tx) + Math.abs(by - ty));
-                }
-                totalDist += nearest;
-            }
-            const avgDist = totalDist / state.boxes.length;
-            if (avgDist < minAvgDist) {
-                failReasons['boxes_too_close'] = (failReasons['boxes_too_close'] || 0) + 1;
                 return null;
             }
         }
 
-        // Step 8: Build final grid
-        // Targets: original positions (fixed)
-        // Boxes: scattered positions from reverse-play
+        // Step 6b: Validate no boxes are on targets (we want an unsolved puzzle)
+        for (const box of state.boxes) {
+            if (targets.includes(box)) {
+                failReasons['box_on_target'] = (failReasons['box_on_target'] || 0) + 1;
+                return null;
+            }
+        }
+
+        // Step 7: Tier 3 — Minimum moves achieved
+        // reversePlay must achieve at least 40% of requested complexity
+        const minDim = Math.min(this.width, this.height);
+        let minMovesFraction = 0.4;
+        if (attempt >= 60) minMovesFraction = 0.3;
+        if (attempt >= 80) minMovesFraction = 0.2;
+        if (attempt >= 90) minMovesFraction = 0.1;
+        const minMoves = Math.floor(this.complexity * minMovesFraction);
+        if (state.successfulMoves < minMoves) {
+            failReasons['too_few_moves'] = (failReasons['too_few_moves'] || 0) + 1;
+            return null;
+        }
+
+        // Step 8: Two-tier box-target spacing validation
+        // Progressive relaxation based on attempt number
+        const perBoxRelax = (attempt >= 50 ? 1 : 0) + (attempt >= 70 ? 1 : 0) + (attempt >= 85 ? 1 : 0);
+        const avgRelax = (attempt >= 50 ? 1 : 0) + (attempt >= 70 ? 1 : 0) + (attempt >= 85 ? 1 : 0);
+
+        // Tier 1: Per-box minimum distance (hard floor)
+        // Cap at 5 so large grids don't get impossibly high thresholds
+        const perBoxMinDist = Math.max(1, Math.min(5, Math.max(2, Math.floor(minDim / 4))) - perBoxRelax);
+        for (const box of state.boxes) {
+            const bx = box % this.width;
+            const by = Math.floor(box / this.width);
+            let nearest = Infinity;
+            for (const t of targets) {
+                const tx = t % this.width;
+                const ty = Math.floor(t / this.width);
+                nearest = Math.min(nearest, Math.abs(bx - tx) + Math.abs(by - ty));
+            }
+            if (nearest < perBoxMinDist) {
+                failReasons['box_too_close'] = (failReasons['box_too_close'] || 0) + 1;
+                return null;
+            }
+        }
+
+        // Tier 2: Average distance threshold (quality floor)
+        // Cap at 8 to keep it achievable on large grids
+        const avgDistThreshold = Math.max(1,
+            Math.min(8, Math.max(3, Math.floor(minDim / 3.5 * Math.min(1.5, this.complexity / 40)))) - avgRelax);
+        let totalDist = 0;
+        for (const box of state.boxes) {
+            const bx = box % this.width;
+            const by = Math.floor(box / this.width);
+            let nearest = Infinity;
+            for (const t of targets) {
+                const tx = t % this.width;
+                const ty = Math.floor(t / this.width);
+                nearest = Math.min(nearest, Math.abs(bx - tx) + Math.abs(by - ty));
+            }
+            totalDist += nearest;
+        }
+        const avgDist = totalDist / state.boxes.length;
+        if (avgDist < avgDistThreshold) {
+            failReasons['boxes_too_close'] = (failReasons['boxes_too_close'] || 0) + 1;
+            return null;
+        }
+
+        // Step 9: Build final grid
         return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
     }
 
+    // Permissive generation: only checks deadlock, skips spacing/moves.
+    // Accepts partially-solved puzzles (some boxes still on targets) rather than fallback.
+    attemptGeneratePermissive(failReasons = {}) {
+        const grid = this.createSimpleRoom();
+        const targets = this.placeSafeTargets(grid);
+        if (targets.length === 0) return null;
+
+        const boxes = [...targets];
+        let playerPos = this.placePlayerNearBoxes(grid, boxes);
+        if (playerPos === -1) return null;
+
+        const state = this.reversePlay(grid, boxes, playerPos, targets);
+
+        // Only check deadlocks
+        for (const box of state.boxes) {
+            if (this.isDeadlock(state.grid, box, targets)) return null;
+        }
+
+        // Require at least 1 box off its target (otherwise puzzle is already solved)
+        if (state.boxes.every(b => targets.includes(b))) return null;
+
+        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
+    }
+
+    // === WEIGHT-BASED STYLE DISPATCH ===
+
+    selectPrimaryAlgorithm() {
+        const w = this.styleWeights;
+        const total = w.clusters + w.maze + w.caves + w.clusteredRooms;
+        if (total === 0) return 'clusters'; // fallback
+        const roll = Math.random() * total;
+        let acc = 0;
+        acc += w.clusters;   if (roll < acc) return 'clusters';
+        acc += w.maze;       if (roll < acc) return 'maze';
+        acc += w.caves;      if (roll < acc) return 'caves';
+        return 'clusteredRooms';
+    }
+
+    selectSecondaryAlgorithm(primary) {
+        const w = { ...this.styleWeights };
+        const primaryWeight = w[primary];
+        delete w[primary];
+        // Pick the next-highest-weighted style
+        let best = null, bestVal = -1;
+        for (const [key, val] of Object.entries(w)) {
+            if (val > bestVal) { bestVal = val; best = key; }
+        }
+        // Only apply overlay if secondary weight >= 20% of primary
+        if (best && bestVal >= primaryWeight * 0.2) return best;
+        return null;
+    }
+
     createSimpleRoom() {
-        if (this.width <= 10 && this.height <= 10) {
-            // Small grids: open room with obstacles
-            return this.createSimpleRoomLegacy();
+        const primary = this.selectPrimaryAlgorithm();
+        let grid;
+        switch (primary) {
+            case 'clusters':       grid = this.createRandomClusters(); break;
+            case 'maze':           grid = this.createMazeSubdivision(); break;
+            case 'caves':          grid = this.createOrganicCaves(); break;
+            case 'clusteredRooms': grid = this.createClusteredRooms(); break;
+            default:               grid = this.createRandomClusters(); break;
         }
-        if (this.width <= 14 && this.height <= 14) {
-            // Medium grids: open room with partition walls for structure
-            return this.createPartitionedRoom();
-        }
-        // Large grids: carve rooms and corridors
-        return this.createRoomsAndCorridors();
+        // Apply secondary overlay
+        const secondary = this.selectSecondaryAlgorithm(primary);
+        if (secondary) this.applyOverlay(grid, secondary);
+        this.ensureConnectivity(grid);
+        return grid;
     }
 
-    createSimpleRoomLegacy() {
+    // === ALGORITHM A: Random Clusters ===
+    createRandomClusters() {
         const grid = [];
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                // Walls on perimeter
-                if (x === 0 || x === this.width - 1 ||
-                    y === 0 || y === this.height - 1) {
-                    grid.push(this.TILES.WALL);
+                if (x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1) {
+                    grid.push(TILES.WALL);
                 } else {
-                    // Add internal walls based on density
-                    // But keep a safety margin from edges (at least 2 tiles from border)
-                    const isSafeZone = x >= 2 && x < this.width - 2 &&
-                                      y >= 2 && y < this.height - 2;
-
-                    if (!isSafeZone && Math.random() < this.wallDensity) {
-                        grid.push(this.TILES.WALL);
-                    } else {
-                        grid.push(this.TILES.FLOOR);
-                    }
+                    grid.push(TILES.FLOOR);
                 }
             }
         }
-
-        // Add some structured obstacles in the middle for variety
+        // Calculate wall budget from wallDensity
+        const interiorArea = (this.width - 2) * (this.height - 2);
+        const wallBudget = Math.floor(this.wallDensity * interiorArea);
+        let wallsPlaced = 0;
+        // Place multiple clusters using random-walk growth from seed points
+        const numClusters = Math.max(1, Math.floor(wallBudget / 4));
+        for (let c = 0; c < numClusters && wallsPlaced < wallBudget; c++) {
+            const seedX = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4));
+            const seedY = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4));
+            const clusterSize = 2 + Math.floor(Math.random() * 5); // 2-6 tiles
+            wallsPlaced += this.growCluster(grid, seedX, seedY, Math.min(clusterSize, wallBudget - wallsPlaced));
+        }
+        // Add structured obstacles for extra variety
         this.addStructuredObstacles(grid);
-
+        this.ensureConnectivity(grid);
         return grid;
     }
 
-    createPartitionedRoom() {
-        // Open rectangle with 1-2 interior partition walls that create sub-rooms.
-        // More reliable than rooms-and-corridors for medium grids (11-14).
+    // === ALGORITHM B: Recursive Subdivision (Maze) ===
+    createMazeSubdivision() {
         const grid = [];
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                if (x === 0 || x === this.width - 1 ||
-                    y === 0 || y === this.height - 1) {
-                    grid.push(this.TILES.WALL);
+                if (x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1) {
+                    grid.push(TILES.WALL);
                 } else {
-                    grid.push(this.TILES.FLOOR);
+                    grid.push(TILES.FLOOR);
                 }
             }
         }
+        const minDim = Math.min(this.width, this.height);
+        let maxDepth = 2 + Math.floor(this.wallDensity * 12);
+        if (minDim < 12) maxDepth = Math.min(maxDepth, 1);
 
-        // Add 1-2 partition walls with gaps to create sub-rooms
-        const numPartitions = 1 + Math.floor(Math.random() * 2);
-
-        for (let i = 0; i < numPartitions; i++) {
-            const isVertical = Math.random() < 0.5;
-
-            if (isVertical) {
-                // Vertical partition: pick x position avoiding edges
-                const wx = 3 + Math.floor(Math.random() * Math.max(1, this.width - 6));
-                // Gap of 2-3 tiles for movement
-                const gapSize = 2 + Math.floor(Math.random() * 2);
-                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4 - gapSize));
-
-                for (let y = 1; y < this.height - 1; y++) {
-                    if (y < gapStart || y >= gapStart + gapSize) {
-                        grid[y * this.width + wx] = this.TILES.WALL;
-                    }
-                }
-            } else {
-                // Horizontal partition
-                const wy = 3 + Math.floor(Math.random() * Math.max(1, this.height - 6));
-                const gapSize = 2 + Math.floor(Math.random() * 2);
-                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4 - gapSize));
-
-                for (let x = 1; x < this.width - 1; x++) {
-                    if (x < gapStart || x >= gapStart + gapSize) {
-                        grid[wy * this.width + x] = this.TILES.WALL;
-                    }
-                }
-            }
-        }
-
-        // Add a few small obstacles (less aggressive than legacy since partitions provide structure)
-        const numObstacles = 1 + Math.floor(Math.random() * 2);
-        for (let i = 0; i < numObstacles; i++) {
-            const cx = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4));
-            const cy = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4));
-            this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-            if (Math.random() < 0.5) {
-                this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
-            } else {
-                this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
-            }
-        }
-
+        this.subdivide(grid, 1, 1, this.width - 2, this.height - 2, 0, maxDepth);
+        this.ensureConnectivity(grid);
         return grid;
     }
 
-    createRoomsAndCorridors() {
-        // Fill entire grid with walls
-        const grid = new Array(this.width * this.height).fill(this.TILES.WALL);
+    subdivide(grid, x1, y1, x2, y2, depth, maxDepth) {
+        const w = x2 - x1 + 1;
+        const h = y2 - y1 + 1;
+        if (depth >= maxDepth || w < 5 || h < 5) return;
 
-        // Calculate how many rooms to place
+        // Split along longer axis (70/30 bias toward longer)
+        const splitHorizontal = (h > w) ? (Math.random() < 0.7) :
+                                (w > h) ? (Math.random() < 0.3) :
+                                (Math.random() < 0.5);
+
+        if (splitHorizontal) {
+            // Horizontal wall line
+            const wy = y1 + 2 + Math.floor(Math.random() * Math.max(1, h - 4));
+            const gapCount = 1 + (w > 8 ? 1 : 0);
+            const gaps = new Set();
+            for (let g = 0; g < gapCount; g++) {
+                const gapStart = x1 + Math.floor(Math.random() * Math.max(1, w - 2));
+                const gapSize = 2 + Math.floor(Math.random() * 2); // 2-3 tile gap
+                for (let gx = gapStart; gx < gapStart + gapSize && gx <= x2; gx++) {
+                    gaps.add(gx);
+                }
+            }
+            for (let x = x1; x <= x2; x++) {
+                if (!gaps.has(x)) {
+                    grid[wy * this.width + x] = TILES.WALL;
+                }
+            }
+            this.subdivide(grid, x1, y1, x2, wy - 1, depth + 1, maxDepth);
+            this.subdivide(grid, x1, wy + 1, x2, y2, depth + 1, maxDepth);
+        } else {
+            // Vertical wall line
+            const wx = x1 + 2 + Math.floor(Math.random() * Math.max(1, w - 4));
+            const gapCount = 1 + (h > 8 ? 1 : 0);
+            const gaps = new Set();
+            for (let g = 0; g < gapCount; g++) {
+                const gapStart = y1 + Math.floor(Math.random() * Math.max(1, h - 2));
+                const gapSize = 2 + Math.floor(Math.random() * 2);
+                for (let gy = gapStart; gy < gapStart + gapSize && gy <= y2; gy++) {
+                    gaps.add(gy);
+                }
+            }
+            for (let y = y1; y <= y2; y++) {
+                if (!gaps.has(y)) {
+                    grid[y * this.width + wx] = TILES.WALL;
+                }
+            }
+            this.subdivide(grid, x1, y1, wx - 1, y2, depth + 1, maxDepth);
+            this.subdivide(grid, wx + 1, y1, x2, y2, depth + 1, maxDepth);
+        }
+    }
+
+    // === ALGORITHM C: Organic Caves (Cellular Automata) ===
+    createOrganicCaves() {
+        const grid = [];
+        const wallProb = Math.min(0.55, this.wallDensity + 0.15);
+        // Initialize: perimeter walls, interior random
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                if (x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1) {
+                    grid.push(TILES.WALL);
+                } else {
+                    grid.push(Math.random() < wallProb ? TILES.WALL : TILES.FLOOR);
+                }
+            }
+        }
+        // Run 4-5 cellular automata iterations
+        const iterations = 4 + Math.floor(Math.random() * 2);
+        for (let iter = 0; iter < iterations; iter++) {
+            const next = [...grid];
+            for (let y = 1; y < this.height - 1; y++) {
+                for (let x = 1; x < this.width - 1; x++) {
+                    const idx = y * this.width + x;
+                    const neighbors = this.countWallNeighbors8(grid, x, y);
+                    if (grid[idx] === TILES.WALL) {
+                        // Wall survives if 4+ wall neighbors
+                        next[idx] = neighbors >= 4 ? TILES.WALL : TILES.FLOOR;
+                    } else {
+                        // Floor becomes wall if 5+ wall neighbors
+                        next[idx] = neighbors >= 5 ? TILES.WALL : TILES.FLOOR;
+                    }
+                }
+            }
+            for (let i = 0; i < grid.length; i++) grid[i] = next[i];
+        }
+        // Keep only the largest connected floor region
+        this.keepLargestFloorRegion(grid);
+        // If too few floor tiles for boxes, widen with extra smoothing pass
+        const floorCount = grid.filter(t => t === TILES.FLOOR).length;
+        const minFloor = this.boxCount * 6 + 10;
+        if (floorCount < minFloor) {
+            const next = [...grid];
+            for (let y = 1; y < this.height - 1; y++) {
+                for (let x = 1; x < this.width - 1; x++) {
+                    const idx = y * this.width + x;
+                    if (grid[idx] === TILES.WALL) {
+                        const neighbors = this.countWallNeighbors8(grid, x, y);
+                        if (neighbors <= 3) next[idx] = TILES.FLOOR;
+                    }
+                }
+            }
+            for (let i = 0; i < grid.length; i++) grid[i] = next[i];
+            this.keepLargestFloorRegion(grid);
+        }
+        this.ensureConnectivity(grid);
+        return grid;
+    }
+
+    countWallNeighbors8(grid, x, y) {
+        let count = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) {
+                    count++; // Out of bounds counts as wall
+                } else if (grid[ny * this.width + nx] === TILES.WALL) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    keepLargestFloorRegion(grid) {
+        const visited = new Set();
+        let largestRegion = [];
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] !== TILES.FLOOR || visited.has(i)) continue;
+            const region = this.floodFillFloor(grid, i);
+            for (const t of region) visited.add(t);
+            if (region.size > largestRegion.length) {
+                largestRegion = [...region];
+            }
+        }
+        // Fill all non-largest floor regions with walls
+        const keep = new Set(largestRegion);
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] === TILES.FLOOR && !keep.has(i)) {
+                grid[i] = TILES.WALL;
+            }
+        }
+    }
+
+    // === ALGORITHM D: Rooms with Internal Clusters ===
+    createClusteredRooms() {
+        // BSP rooms + corridors (reusing existing logic inline)
+        const grid = new Array(this.width * this.height).fill(TILES.WALL);
         const interiorW = this.width - 2;
         const interiorH = this.height - 2;
         const interiorArea = interiorW * interiorH;
         const roomAreaTarget = Math.max(15, Math.round(80 - this.wallDensity * 200));
         const roomCount = Math.max(2, Math.floor(interiorArea / roomAreaTarget));
-
-        // Room size limits scale with grid size
         const minSide = 3;
         const maxSide = Math.min(7, Math.max(4, Math.floor(Math.min(this.width, this.height) / 4)));
 
-        // Place rooms with overlap rejection
         const rooms = [];
         let attempts = 0;
         const maxAttempts = roomCount * 20;
-
         while (rooms.length < roomCount && attempts < maxAttempts) {
             attempts++;
             const rw = minSide + Math.floor(Math.random() * (maxSide - minSide + 1));
             const rh = minSide + Math.floor(Math.random() * (maxSide - minSide + 1));
             const rx = 2 + Math.floor(Math.random() * Math.max(1, this.width - rw - 3));
             const ry = 2 + Math.floor(Math.random() * Math.max(1, this.height - rh - 3));
-
-            // Check for overlap with existing rooms (1-tile margin)
             let overlaps = false;
             for (const room of rooms) {
                 if (rx - 1 < room.x + room.w && rx + rw + 1 > room.x &&
                     ry - 1 < room.y + room.h && ry + rh + 1 > room.y) {
-                    overlaps = true;
-                    break;
+                    overlaps = true; break;
                 }
             }
             if (overlaps) continue;
-
-            // Carve the room
             for (let dy = 0; dy < rh; dy++) {
                 for (let dx = 0; dx < rw; dx++) {
-                    const idx = (ry + dy) * this.width + (rx + dx);
-                    grid[idx] = this.TILES.FLOOR;
+                    grid[(ry + dy) * this.width + (rx + dx)] = TILES.FLOOR;
                 }
             }
             rooms.push({ x: rx, y: ry, w: rw, h: rh,
                 cx: Math.floor(rx + rw / 2), cy: Math.floor(ry + rh / 2) });
         }
-
-        // Connect rooms with L-shaped corridors
+        // Connect rooms with corridors
         for (let i = 1; i < rooms.length; i++) {
             this.carveCorridor(grid, rooms[i - 1].cx, rooms[i - 1].cy,
                                      rooms[i].cx, rooms[i].cy);
         }
-
-        // Add 1-2 extra corridors for loops
         const extras = 1 + Math.floor(Math.random() * 2);
         for (let i = 0; i < extras && rooms.length >= 2; i++) {
             const a = Math.floor(Math.random() * rooms.length);
@@ -322,22 +496,161 @@ class SokobanGenerator {
                                      rooms[b].cx, rooms[b].cy);
         }
 
-        // Verify connectivity via BFS and fix isolated areas
-        this.ensureConnectivity(grid);
-
-        // Add small wall bumps inside larger rooms for variety
+        // Populate room interiors with wall clusters (the "clustered rooms" twist)
         for (const room of rooms) {
-            if (room.w >= 5 && room.h >= 5) {
-                const bumps = 1 + Math.floor(Math.random() * 2);
-                for (let b = 0; b < bumps; b++) {
-                    const bx = room.x + 1 + Math.floor(Math.random() * (room.w - 2));
-                    const by = room.y + 1 + Math.floor(Math.random() * (room.h - 2));
-                    this.setTileIfFloor(grid, bx, by, this.TILES.WALL);
+            const roomArea = room.w * room.h;
+            if (roomArea >= 20) {
+                const numClusters = 1 + Math.floor(Math.random() * 3);
+                for (let c = 0; c < numClusters; c++) {
+                    const sx = room.x + 1 + Math.floor(Math.random() * Math.max(1, room.w - 2));
+                    const sy = room.y + 1 + Math.floor(Math.random() * Math.max(1, room.h - 2));
+                    this.growCluster(grid, sx, sy, 2 + Math.floor(Math.random() * 3),
+                        room.x + 1, room.y + 1, room.x + room.w - 2, room.y + room.h - 2);
+                }
+            }
+            if (roomArea >= 30 && Math.random() < 0.5) {
+                this.addStructuredObstaclesInRoom(grid, room);
+            }
+        }
+        this.ensureConnectivity(grid);
+        return grid;
+    }
+
+    addStructuredObstaclesInRoom(grid, room) {
+        // Place a single structured obstacle inside a room's bounds
+        const cx = room.x + 1 + Math.floor(Math.random() * Math.max(1, room.w - 3));
+        const cy = room.y + 1 + Math.floor(Math.random() * Math.max(1, room.h - 3));
+        const pattern = Math.floor(Math.random() * 4);
+        switch (pattern) {
+            case 0: // Single wall
+                this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                break;
+            case 1: // L-shape
+                this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
+                this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
+                break;
+            case 2: // 2x1 horizontal
+                this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
+                break;
+            case 3: // 2x1 vertical
+                this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
+                break;
+        }
+    }
+
+    // === OVERLAY SYSTEM ===
+    applyOverlay(grid, style) {
+        switch (style) {
+            case 'clusters': this.overlayScatterClusters(grid); break;
+            case 'maze':     this.overlaySubdivisionWalls(grid); break;
+            case 'caves':    this.overlayCaveSmoothing(grid); break;
+            case 'clusteredRooms': this.overlayEdgeClusters(grid); break;
+        }
+    }
+
+    overlayScatterClusters(grid) {
+        // Scatter a few extra small wall clusters onto floor tiles
+        const count = 1 + Math.floor(Math.random() * 3);
+        for (let c = 0; c < count; c++) {
+            const sx = 2 + Math.floor(Math.random() * Math.max(1, this.width - 4));
+            const sy = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4));
+            if (grid[sy * this.width + sx] === TILES.FLOOR) {
+                this.growCluster(grid, sx, sy, 1 + Math.floor(Math.random() * 3));
+            }
+        }
+    }
+
+    overlaySubdivisionWalls(grid) {
+        // Add 1-2 subdivision walls with gaps across existing floor space
+        const count = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) {
+            const isVertical = Math.random() < 0.5;
+            if (isVertical) {
+                const wx = 3 + Math.floor(Math.random() * Math.max(1, this.width - 6));
+                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.height - 6));
+                const gapSize = 2 + Math.floor(Math.random() * 2);
+                for (let y = 1; y < this.height - 1; y++) {
+                    if (y >= gapStart && y < gapStart + gapSize) continue;
+                    this.setTileIfFloor(grid, wx, y, TILES.WALL);
+                }
+            } else {
+                const wy = 3 + Math.floor(Math.random() * Math.max(1, this.height - 6));
+                const gapStart = 2 + Math.floor(Math.random() * Math.max(1, this.width - 6));
+                const gapSize = 2 + Math.floor(Math.random() * 2);
+                for (let x = 1; x < this.width - 1; x++) {
+                    if (x >= gapStart && x < gapStart + gapSize) continue;
+                    this.setTileIfFloor(grid, x, wy, TILES.WALL);
                 }
             }
         }
+    }
 
-        return grid;
+    overlayCaveSmoothing(grid) {
+        // Run 1-2 cellular automata smoothing iterations (softens edges)
+        const iterations = 1 + Math.floor(Math.random() * 2);
+        for (let iter = 0; iter < iterations; iter++) {
+            const next = [...grid];
+            for (let y = 1; y < this.height - 1; y++) {
+                for (let x = 1; x < this.width - 1; x++) {
+                    const idx = y * this.width + x;
+                    const neighbors = this.countWallNeighbors8(grid, x, y);
+                    if (grid[idx] === TILES.FLOOR && neighbors >= 5) {
+                        next[idx] = TILES.WALL;
+                    } else if (grid[idx] === TILES.WALL && neighbors <= 2) {
+                        next[idx] = TILES.FLOOR;
+                    }
+                }
+            }
+            for (let i = 0; i < grid.length; i++) grid[i] = next[i];
+        }
+    }
+
+    overlayEdgeClusters(grid) {
+        // Add small wall clusters near existing wall edges
+        const count = 1 + Math.floor(Math.random() * 3);
+        for (let c = 0; c < count; c++) {
+            // Find a random floor tile adjacent to a wall
+            const candidates = [];
+            for (let y = 2; y < this.height - 2; y++) {
+                for (let x = 2; x < this.width - 2; x++) {
+                    const idx = y * this.width + x;
+                    if (grid[idx] === TILES.FLOOR && this.countWallNeighbors8(grid, x, y) >= 2) {
+                        candidates.push({ x, y });
+                    }
+                }
+            }
+            if (candidates.length > 0) {
+                const pick = candidates[Math.floor(Math.random() * candidates.length)];
+                this.growCluster(grid, pick.x, pick.y, 1 + Math.floor(Math.random() * 2));
+            }
+        }
+    }
+
+    // === HELPER: Random-walk cluster placement ===
+    growCluster(grid, seedX, seedY, size, minX = 1, minY = 1, maxX = null, maxY = null) {
+        if (maxX === null) maxX = this.width - 2;
+        if (maxY === null) maxY = this.height - 2;
+        let placed = 0;
+        let cx = seedX, cy = seedY;
+        for (let i = 0; i < size * 3 && placed < size; i++) {
+            if (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY) {
+                const idx = cy * this.width + cx;
+                if (grid[idx] === TILES.FLOOR) {
+                    grid[idx] = TILES.WALL;
+                    placed++;
+                }
+            }
+            // Random walk
+            const dir = Math.floor(Math.random() * 4);
+            if (dir === 0) cx++;
+            else if (dir === 1) cx--;
+            else if (dir === 2) cy++;
+            else cy--;
+        }
+        return placed;
     }
 
     carveCorridor(grid, x1, y1, x2, y2) {
@@ -356,7 +669,7 @@ class SokobanGenerator {
         const maxX = Math.max(x1, x2);
         for (let x = minX; x <= maxX; x++) {
             if (x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
-                grid[y * this.width + x] = this.TILES.FLOOR;
+                grid[y * this.width + x] = TILES.FLOOR;
             }
         }
     }
@@ -366,7 +679,7 @@ class SokobanGenerator {
         const maxY = Math.max(y1, y2);
         for (let y = minY; y <= maxY; y++) {
             if (x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
-                grid[y * this.width + x] = this.TILES.FLOOR;
+                grid[y * this.width + x] = TILES.FLOOR;
             }
         }
     }
@@ -385,7 +698,7 @@ class SokobanGenerator {
                 if (!this.isValidPosition(nx, ny)) continue;
                 const nIdx = ny * this.width + nx;
                 if (visited.has(nIdx)) continue;
-                if (grid[nIdx] !== this.TILES.FLOOR) continue;
+                if (grid[nIdx] !== TILES.FLOOR) continue;
                 visited.add(nIdx);
                 queue.push(nIdx);
             }
@@ -397,7 +710,7 @@ class SokobanGenerator {
         // Find all floor tiles
         const floorTiles = [];
         for (let i = 0; i < grid.length; i++) {
-            if (grid[i] === this.TILES.FLOOR) floorTiles.push(i);
+            if (grid[i] === TILES.FLOOR) floorTiles.push(i);
         }
         if (floorTiles.length === 0) return;
 
@@ -458,38 +771,38 @@ class SokobanGenerator {
 
             switch(pattern) {
                 case 0: // Single wall
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
                     break;
                 case 1: // 3-tile horizontal line
-                    this.setTileIfFloor(grid, cx - 1, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx - 1, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
                     break;
                 case 2: // 3-tile vertical line
-                    this.setTileIfFloor(grid, cx, cy - 1, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy - 1, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
                     break;
                 case 3: // L-shape
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
                     break;
                 case 4: // T-shape (horizontal bar + down stem)
-                    this.setTileIfFloor(grid, cx - 1, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx - 1, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
                     break;
                 case 5: // 2x2 block
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx, cy + 1, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy + 1, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy + 1, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy + 1, TILES.WALL);
                     break;
                 case 6: // 2x1 horizontal (small)
-                    this.setTileIfFloor(grid, cx, cy, this.TILES.WALL);
-                    this.setTileIfFloor(grid, cx + 1, cy, this.TILES.WALL);
+                    this.setTileIfFloor(grid, cx, cy, TILES.WALL);
+                    this.setTileIfFloor(grid, cx + 1, cy, TILES.WALL);
                     break;
             }
         }
@@ -502,9 +815,9 @@ class SokobanGenerator {
         const sy = 2 + Math.floor(Math.random() * Math.max(1, this.height - 4 - (horizontal ? 0 : segLen)));
         for (let s = 0; s < segLen; s++) {
             if (horizontal) {
-                this.setTileIfFloor(grid, sx + s, sy, this.TILES.WALL);
+                this.setTileIfFloor(grid, sx + s, sy, TILES.WALL);
             } else {
-                this.setTileIfFloor(grid, sx, sy + s, this.TILES.WALL);
+                this.setTileIfFloor(grid, sx, sy + s, TILES.WALL);
             }
         }
     }
@@ -512,7 +825,7 @@ class SokobanGenerator {
     setTileIfFloor(grid, x, y, tile) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
         const idx = y * this.width + x;
-        if (grid[idx] === this.TILES.FLOOR) {
+        if (grid[idx] === TILES.FLOOR) {
             grid[idx] = tile;
         }
     }
@@ -524,7 +837,7 @@ class SokobanGenerator {
         for (let y = 2; y < this.height - 2; y++) {
             for (let x = 2; x < this.width - 2; x++) {
                 const idx = y * this.width + x;
-                if (grid[idx] === this.TILES.FLOOR) {
+                if (grid[idx] === TILES.FLOOR) {
                     // Check it's not a corner or against a wall
                     if (!this.isCornerOrWall(grid, x, y)) {
                         safeTiles.push(idx);
@@ -556,7 +869,7 @@ class SokobanGenerator {
         }
 
         for (const t of targets) {
-            grid[t] = this.TILES.TARGET;
+            grid[t] = TILES.TARGET;
         }
 
         return targets;
@@ -590,10 +903,10 @@ class SokobanGenerator {
         const right = grid[y * this.width + (x + 1)];
 
         // Corner if walls on two adjacent sides
-        if ((up === this.TILES.WALL && left === this.TILES.WALL)) return true;
-        if ((up === this.TILES.WALL && right === this.TILES.WALL)) return true;
-        if ((down === this.TILES.WALL && left === this.TILES.WALL)) return true;
-        if ((down === this.TILES.WALL && right === this.TILES.WALL)) return true;
+        if ((up === TILES.WALL && left === TILES.WALL)) return true;
+        if ((up === TILES.WALL && right === TILES.WALL)) return true;
+        if ((down === TILES.WALL && left === TILES.WALL)) return true;
+        if ((down === TILES.WALL && right === TILES.WALL)) return true;
 
         return false;
     }
@@ -621,10 +934,10 @@ class SokobanGenerator {
         const left = grid[y * this.width + (x - 1)];
         const right = grid[y * this.width + (x + 1)];
 
-        return up === this.TILES.WALL ||
-               down === this.TILES.WALL ||
-               left === this.TILES.WALL ||
-               right === this.TILES.WALL;
+        return up === TILES.WALL ||
+               down === TILES.WALL ||
+               left === TILES.WALL ||
+               right === TILES.WALL;
     }
 
     isBoxAccessible(grid, boxPos, boxSet, targetSet) {
@@ -641,10 +954,10 @@ class SokobanGenerator {
         const left = y * this.width + (x - 1);
         const right = y * this.width + (x + 1);
 
-        const upAccessible = grid[up] !== this.TILES.WALL && !boxSet.has(up);
-        const downAccessible = grid[down] !== this.TILES.WALL && !boxSet.has(down);
-        const leftAccessible = grid[left] !== this.TILES.WALL && !boxSet.has(left);
-        const rightAccessible = grid[right] !== this.TILES.WALL && !boxSet.has(right);
+        const upAccessible = grid[up] !== TILES.WALL && !boxSet.has(up);
+        const downAccessible = grid[down] !== TILES.WALL && !boxSet.has(down);
+        const leftAccessible = grid[left] !== TILES.WALL && !boxSet.has(left);
+        const rightAccessible = grid[right] !== TILES.WALL && !boxSet.has(right);
 
         const accessibleSides = [upAccessible, downAccessible, leftAccessible, rightAccessible].filter(Boolean).length;
 
@@ -678,7 +991,7 @@ class SokobanGenerator {
             const ny = by + dir.dy;
             if (!this.isValidPosition(nx, ny)) continue;
             const nPos = ny * this.width + nx;
-            if (grid[nPos] !== this.TILES.WALL && !otherBoxSet.has(nPos)) {
+            if (grid[nPos] !== TILES.WALL && !otherBoxSet.has(nPos)) {
                 pushSides.push({ pos: nPos, axis: dir.axis });
             }
         }
@@ -720,7 +1033,7 @@ class SokobanGenerator {
                 if (!this.isValidPosition(nx, ny)) continue;
                 const nPos = ny * this.width + nx;
                 if (visited.has(nPos)) continue;
-                if (grid[nPos] === this.TILES.WALL) continue;
+                if (grid[nPos] === TILES.WALL) continue;
                 if (nPos === excludeBox) continue;
                 if (excludeBoxSet.has(nPos)) continue;
                 visited.add(nPos);
@@ -794,7 +1107,7 @@ class SokobanGenerator {
         const right = grid[y * this.width + (x + 1)];
 
         // Check if against a horizontal wall (top or bottom)
-        if (up === this.TILES.WALL || down === this.TILES.WALL) {
+        if (up === TILES.WALL || down === TILES.WALL) {
             // Can only move left or right along this wall
             // Check if any target is reachable horizontally from this row
             const canReachTarget = targets.some(target => {
@@ -808,18 +1121,18 @@ class SokobanGenerator {
                 const maxX = Math.max(x, tx);
                 for (let checkX = minX; checkX <= maxX; checkX++) {
                     const tile = grid[y * this.width + checkX];
-                    if (tile === this.TILES.WALL) return false;
+                    if (tile === TILES.WALL) return false;
                 }
                 return true;
             });
 
-            if (!canReachTarget && (left === this.TILES.WALL || right === this.TILES.WALL)) {
+            if (!canReachTarget && (left === TILES.WALL || right === TILES.WALL)) {
                 return true; // Deadlock: against wall with no horizontal path
             }
         }
 
         // Check if against a vertical wall (left or right)
-        if (left === this.TILES.WALL || right === this.TILES.WALL) {
+        if (left === TILES.WALL || right === TILES.WALL) {
             // Can only move up or down along this wall
             const canReachTarget = targets.some(target => {
                 const tx = target % this.width;
@@ -832,12 +1145,12 @@ class SokobanGenerator {
                 const maxY = Math.max(y, ty);
                 for (let checkY = minY; checkY <= maxY; checkY++) {
                     const tile = grid[checkY * this.width + x];
-                    if (tile === this.TILES.WALL) return false;
+                    if (tile === TILES.WALL) return false;
                 }
                 return true;
             });
 
-            if (!canReachTarget && (up === this.TILES.WALL || down === this.TILES.WALL)) {
+            if (!canReachTarget && (up === TILES.WALL || down === TILES.WALL)) {
                 return true; // Deadlock: against wall with no vertical path
             }
         }
@@ -855,7 +1168,7 @@ class SokobanGenerator {
 
             for (const pos of adjacent) {
                 const tile = grid[pos];
-                if ((tile === this.TILES.FLOOR || tile === this.TILES.TARGET) &&
+                if ((tile === TILES.FLOOR || tile === TILES.TARGET) &&
                     !boxes.includes(pos)) {
                     candidates.push(pos);
                 }
@@ -928,11 +1241,11 @@ class SokobanGenerator {
                 const playerDest = playerDestY * this.width + playerDestX;
 
                 // newBoxPos must be empty floor (box destination)
-                if (state.grid[newBoxPos] === this.TILES.WALL) continue;
+                if (state.grid[newBoxPos] === TILES.WALL) continue;
                 if (boxSet.has(newBoxPos)) continue;
 
                 // playerDest must be empty floor (player steps there during pull)
-                if (state.grid[playerDest] === this.TILES.WALL) continue;
+                if (state.grid[playerDest] === TILES.WALL) continue;
                 if (boxSet.has(playerDest)) continue;
 
                 // Player must be able to walk to newBoxPos to initiate the pull
@@ -966,6 +1279,7 @@ class SokobanGenerator {
 
         console.log(`[SokobanGen] reversePlay: ${successfulMoves}/${this.complexity} moves achieved`);
 
+        state.successfulMoves = successfulMoves;
         return state;
     }
 
@@ -973,8 +1287,8 @@ class SokobanGenerator {
         const finalGrid = [];
 
         for (let i = 0; i < grid.length; i++) {
-            if (grid[i] === this.TILES.TARGET) {
-                finalGrid.push(this.TILES.FLOOR);
+            if (grid[i] === TILES.TARGET) {
+                finalGrid.push(TILES.FLOOR);
             } else {
                 finalGrid.push(grid[i]);
             }
@@ -982,21 +1296,21 @@ class SokobanGenerator {
 
         // Place targets
         for (const target of targets) {
-            finalGrid[target] = this.TILES.TARGET;
+            finalGrid[target] = TILES.TARGET;
         }
 
         // Place boxes
         for (const box of boxes) {
             const isOnTarget = targets.includes(box);
-            finalGrid[box] = isOnTarget ? this.TILES.BOX_ON_TARGET : this.TILES.BOX;
+            finalGrid[box] = isOnTarget ? TILES.BOX_ON_TARGET : TILES.BOX;
         }
 
         // Mark player tile (keep target visible if on target)
         const playerOnTarget = targets.includes(playerPos);
         if (playerOnTarget) {
-            finalGrid[playerPos] = this.TILES.TARGET;
+            finalGrid[playerPos] = TILES.TARGET;
         } else {
-            finalGrid[playerPos] = this.TILES.PLAYER;
+            finalGrid[playerPos] = TILES.PLAYER;
         }
 
         return {
@@ -1015,9 +1329,9 @@ class SokobanGenerator {
             for (let x = 0; x < this.width; x++) {
                 if (x === 0 || x === this.width - 1 ||
                     y === 0 || y === this.height - 1) {
-                    grid.push(this.TILES.WALL);
+                    grid.push(TILES.WALL);
                 } else {
-                    grid.push(this.TILES.FLOOR);
+                    grid.push(TILES.FLOOR);
                 }
             }
         }
@@ -1031,9 +1345,9 @@ class SokobanGenerator {
         const playerY = Math.min(this.height - 2, midY + 1);
         const playerIdx = playerY * this.width + playerX;
 
-        grid[targetIdx] = this.TILES.TARGET;
-        grid[boxIdx] = this.TILES.BOX;
-        grid[playerIdx] = this.TILES.PLAYER;
+        grid[targetIdx] = TILES.TARGET;
+        grid[boxIdx] = TILES.BOX;
+        grid[playerIdx] = TILES.PLAYER;
 
         return {
             width: this.width,
@@ -1072,7 +1386,3 @@ class SokobanGenerator {
     }
 }
 
-// Export for use in main game
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = SokobanGenerator;
-}

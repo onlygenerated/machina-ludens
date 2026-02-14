@@ -1,10 +1,19 @@
+import { SokobanGenerator } from './generator.js';
+
 // Genome for Sokoban Level Generation
 // Represents the "DNA" of a level generator that can evolve through selection
 
-class Genome {
+export class Genome {
     constructor(genes = null) {
         if (genes) {
             this.genes = { ...genes };
+            // Backward compatibility: backfill style genes for old genomes
+            if (this.genes.styleClusters === undefined) {
+                this.genes.styleClusters = 25;
+                this.genes.styleMaze = 25;
+                this.genes.styleCaves = 25;
+                this.genes.styleClusteredRooms = 25;
+            }
         } else {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
@@ -24,7 +33,13 @@ class Genome {
             complexity: 30 + Math.floor(Math.random() * 51),
 
             // Wall density: probability of internal walls (0.05-0.25)
-            wallDensity: 0.05 + Math.random() * 0.2
+            wallDensity: 0.05 + Math.random() * 0.2,
+
+            // Style weights (0-100 each) — relative weights for generation algorithm selection
+            styleClusters: Math.floor(Math.random() * 101),
+            styleMaze: Math.floor(Math.random() * 101),
+            styleCaves: Math.floor(Math.random() * 101),
+            styleClusteredRooms: Math.floor(Math.random() * 101)
         };
     }
 
@@ -40,12 +55,20 @@ class Genome {
         const maxBoxes = Math.max(2, Math.floor(playableArea / 12));
         const effectiveBoxCount = Math.min(this.genes.boxCount, maxBoxes);
 
+        const styleWeights = {
+            clusters: this.genes.styleClusters,
+            maze: this.genes.styleMaze,
+            caves: this.genes.styleCaves,
+            clusteredRooms: this.genes.styleClusteredRooms
+        };
+
         return new SokobanGenerator(
             this.genes.gridSize,      // width
             this.genes.gridSize,      // height (square grids for now)
             effectiveBoxCount,
             effectiveComplexity,
-            this.genes.wallDensity
+            this.genes.wallDensity,
+            styleWeights
         );
     }
 
@@ -102,6 +125,15 @@ class Genome {
             ));
         }
 
+        // Mutate style weights (each 20% chance, ±15, clamped 0-100)
+        for (const styleGene of ['styleClusters', 'styleMaze', 'styleCaves', 'styleClusteredRooms']) {
+            if (Math.random() < 0.2) {
+                mutated[styleGene] = Math.max(0, Math.min(100,
+                    mutated[styleGene] + Math.floor((Math.random() - 0.5) * 30 + 0.5)
+                ));
+            }
+        }
+
         return new Genome(mutated);
     }
 
@@ -112,12 +144,28 @@ class Genome {
 
     // Get a human-readable summary of this genome
     describe() {
+        const total = this.genes.styleClusters + this.genes.styleMaze +
+                      this.genes.styleCaves + this.genes.styleClusteredRooms;
+        const pct = (v) => total > 0 ? Math.round(v / total * 100) : 25;
         return {
             'Grid Size': `${this.genes.gridSize}x${this.genes.gridSize}`,
             'Boxes': this.genes.boxCount,
             'Complexity': this.genes.complexity,
-            'Wall Density': `${(this.genes.wallDensity * 100).toFixed(1)}%`
+            'Wall Density': `${(this.genes.wallDensity * 100).toFixed(1)}%`,
+            'Style': `Clusters ${pct(this.genes.styleClusters)}% / Maze ${pct(this.genes.styleMaze)}% / Caves ${pct(this.genes.styleCaves)}% / Rooms ${pct(this.genes.styleClusteredRooms)}%`
         };
+    }
+
+    // Get the dominant style name from this genome
+    getDominantStyle() {
+        const styles = [
+            { name: 'Clusters', weight: this.genes.styleClusters },
+            { name: 'Maze', weight: this.genes.styleMaze },
+            { name: 'Caves', weight: this.genes.styleCaves },
+            { name: 'Rooms', weight: this.genes.styleClusteredRooms }
+        ];
+        styles.sort((a, b) => b.weight - a.weight);
+        return styles[0].name;
     }
 
     // Serialize to JSON
@@ -134,7 +182,7 @@ class Genome {
 }
 
 // Population manager for genetic algorithm
-class Population {
+export class Population {
     constructor(size = 10) {
         this.genomes = [];
         this.generation = 0;
@@ -206,7 +254,11 @@ class Population {
             gridSize: 0,
             boxCount: 0,
             complexity: 0,
-            wallDensity: 0
+            wallDensity: 0,
+            styleClusters: 0,
+            styleMaze: 0,
+            styleCaves: 0,
+            styleClusteredRooms: 0
         };
 
         for (const genome of this.genomes) {
@@ -214,9 +266,17 @@ class Population {
             avgGenes.boxCount += genome.genes.boxCount;
             avgGenes.complexity += genome.genes.complexity;
             avgGenes.wallDensity += genome.genes.wallDensity;
+            avgGenes.styleClusters += genome.genes.styleClusters;
+            avgGenes.styleMaze += genome.genes.styleMaze;
+            avgGenes.styleCaves += genome.genes.styleCaves;
+            avgGenes.styleClusteredRooms += genome.genes.styleClusteredRooms;
         }
 
         const count = this.genomes.length;
+        const totalStyle = avgGenes.styleClusters + avgGenes.styleMaze +
+                           avgGenes.styleCaves + avgGenes.styleClusteredRooms;
+        const stylePct = (v) => totalStyle > 0 ? Math.round(v / totalStyle * 100) : 25;
+
         return {
             generation: this.generation,
             populationSize: count,
@@ -225,6 +285,12 @@ class Population {
                 boxCount: (avgGenes.boxCount / count).toFixed(1),
                 complexity: (avgGenes.complexity / count).toFixed(1),
                 wallDensity: ((avgGenes.wallDensity / count) * 100).toFixed(1) + '%'
+            },
+            styleWeights: {
+                clusters: stylePct(avgGenes.styleClusters),
+                maze: stylePct(avgGenes.styleMaze),
+                caves: stylePct(avgGenes.styleCaves),
+                clusteredRooms: stylePct(avgGenes.styleClusteredRooms)
             }
         };
     }
@@ -249,7 +315,7 @@ class Population {
 }
 
 // Bot class - wraps a Genome with personality and visual identity
-class Bot {
+export class Bot {
     constructor(genome) {
         this.genome = genome;
         this.id = Bot.generateId(genome);
@@ -336,6 +402,23 @@ class Bot {
             traits.push('ambitious with puzzles');
         } else if (genes.boxCount <= 3) {
             traits.push('believes in minimalism');
+        }
+
+        // Style-based traits (based on dominant style)
+        const styleWeights = [
+            { name: 'clusters', weight: genes.styleClusters },
+            { name: 'maze', weight: genes.styleMaze },
+            { name: 'caves', weight: genes.styleCaves },
+            { name: 'clusteredRooms', weight: genes.styleClusteredRooms }
+        ].sort((a, b) => b.weight - a.weight);
+        const dominant = styleWeights[0];
+        if (dominant.weight > 40) {
+            switch (dominant.name) {
+                case 'clusters': traits.push('scatters wall islands across arenas'); break;
+                case 'maze': traits.push('loves labyrinthine corridors'); break;
+                case 'caves': traits.push('carves organic caverns'); break;
+                case 'clusteredRooms': traits.push('builds furnished rooms'); break;
+            }
         }
 
         // Return personality string
@@ -461,8 +544,15 @@ class Bot {
         // Wall density: 0.02-0.3 range (span of 0.28)
         const densityDiff = Math.abs(myGenes.wallDensity - theirGenes.wallDensity) / 0.28;
 
-        // Average the differences (0 = identical, 1 = maximally different)
-        const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff) / 4;
+        // Style weight dimensions (each 0-100, span of 100)
+        const clustersDiff = Math.abs(myGenes.styleClusters - theirGenes.styleClusters) / 100;
+        const mazeDiff = Math.abs(myGenes.styleMaze - theirGenes.styleMaze) / 100;
+        const cavesDiff = Math.abs(myGenes.styleCaves - theirGenes.styleCaves) / 100;
+        const roomsDiff = Math.abs(myGenes.styleClusteredRooms - theirGenes.styleClusteredRooms) / 100;
+
+        // Average over 8 dimensions
+        const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
+                         clustersDiff + mazeDiff + cavesDiff + roomsDiff) / 8;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;
@@ -514,7 +604,3 @@ class Bot {
     }
 }
 
-// Export for use in main game
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { Genome, Population, Bot };
-}
