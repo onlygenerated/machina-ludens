@@ -14,6 +14,12 @@ export class Genome {
                 this.genes.styleCaves = 25;
                 this.genes.styleClusteredRooms = 25;
             }
+            // Backward compatibility: backfill visual genes for old genomes
+            if (this.genes.palette === undefined) {
+                this.genes.palette = ((this.genes.gridSize - 7) / 73);
+                this.genes.tileStyle = Math.min(1, this.genes.wallDensity / 0.3);
+                this.genes.decoration = Math.min(1, (this.genes.complexity - 20) / 180);
+            }
         } else {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
@@ -39,7 +45,12 @@ export class Genome {
             styleClusters: Math.floor(Math.random() * 101),
             styleMaze: Math.floor(Math.random() * 101),
             styleCaves: Math.floor(Math.random() * 101),
-            styleClusteredRooms: Math.floor(Math.random() * 101)
+            styleClusteredRooms: Math.floor(Math.random() * 101),
+
+            // Visual genes
+            palette: Math.random(),       // 0-1 circular, controls HSL hue
+            tileStyle: Math.random(),     // 0-1 clamped, angular→organic
+            decoration: Math.random()     // 0-1 clamped, minimal→rich
         };
     }
 
@@ -134,6 +145,27 @@ export class Genome {
             }
         }
 
+        // Mutate visual genes
+        if (Math.random() < mutationRate) {
+            // Palette: circular wrapping (±0.08)
+            mutated.palette = mutated.palette + (Math.random() - 0.5) * 0.16;
+            mutated.palette = mutated.palette - Math.floor(mutated.palette); // wrap to [0,1)
+        }
+
+        if (Math.random() < mutationRate) {
+            // Tile style: clamped (±0.1)
+            mutated.tileStyle = Math.max(0, Math.min(1,
+                mutated.tileStyle + (Math.random() - 0.5) * 0.2
+            ));
+        }
+
+        if (Math.random() < mutationRate) {
+            // Decoration: clamped (±0.08)
+            mutated.decoration = Math.max(0, Math.min(1,
+                mutated.decoration + (Math.random() - 0.5) * 0.16
+            ));
+        }
+
         return new Genome(mutated);
     }
 
@@ -147,12 +179,17 @@ export class Genome {
         const total = this.genes.styleClusters + this.genes.styleMaze +
                       this.genes.styleCaves + this.genes.styleClusteredRooms;
         const pct = (v) => total > 0 ? Math.round(v / total * 100) : 25;
+        const ts = this.genes.tileStyle;
+        const dec = this.genes.decoration;
         return {
             'Grid Size': `${this.genes.gridSize}x${this.genes.gridSize}`,
             'Boxes': this.genes.boxCount,
             'Complexity': this.genes.complexity,
             'Wall Density': `${(this.genes.wallDensity * 100).toFixed(1)}%`,
-            'Style': `Clusters ${pct(this.genes.styleClusters)}% / Maze ${pct(this.genes.styleMaze)}% / Caves ${pct(this.genes.styleCaves)}% / Rooms ${pct(this.genes.styleClusteredRooms)}%`
+            'Style': `Clusters ${pct(this.genes.styleClusters)}% / Maze ${pct(this.genes.styleMaze)}% / Caves ${pct(this.genes.styleCaves)}% / Rooms ${pct(this.genes.styleClusteredRooms)}%`,
+            'Palette': `${Math.round(this.genes.palette * 360)} deg`,
+            'Tile Style': ts < 0.33 ? 'Angular' : ts < 0.66 ? 'Balanced' : 'Organic',
+            'Decoration': dec < 0.33 ? 'Minimal' : dec < 0.66 ? 'Moderate' : 'Rich'
         };
     }
 
@@ -258,7 +295,10 @@ export class Population {
             styleClusters: 0,
             styleMaze: 0,
             styleCaves: 0,
-            styleClusteredRooms: 0
+            styleClusteredRooms: 0,
+            palette: 0,
+            tileStyle: 0,
+            decoration: 0
         };
 
         for (const genome of this.genomes) {
@@ -270,6 +310,9 @@ export class Population {
             avgGenes.styleMaze += genome.genes.styleMaze;
             avgGenes.styleCaves += genome.genes.styleCaves;
             avgGenes.styleClusteredRooms += genome.genes.styleClusteredRooms;
+            avgGenes.palette += genome.genes.palette;
+            avgGenes.tileStyle += genome.genes.tileStyle;
+            avgGenes.decoration += genome.genes.decoration;
         }
 
         const count = this.genomes.length;
@@ -291,6 +334,11 @@ export class Population {
                 maze: stylePct(avgGenes.styleMaze),
                 caves: stylePct(avgGenes.styleCaves),
                 clusteredRooms: stylePct(avgGenes.styleClusteredRooms)
+            },
+            visualAverages: {
+                palette: Math.round((avgGenes.palette / count) * 360),
+                tileStyle: (avgGenes.tileStyle / count).toFixed(2),
+                decoration: (avgGenes.decoration / count).toFixed(2)
             }
         };
     }
@@ -421,6 +469,25 @@ export class Bot {
             }
         }
 
+        // Visual gene traits
+        if (genes.tileStyle < 0.25) {
+            traits.push('has a sharp geometric eye');
+        } else if (genes.tileStyle > 0.75) {
+            traits.push('sees the world in soft curves');
+        }
+
+        if (genes.decoration > 0.7) {
+            traits.push('obsessed with details');
+        } else if (genes.decoration < 0.2) {
+            traits.push('a minimalist at heart');
+        }
+
+        if (genes.palette < 0.2) {
+            traits.push('draws in warm colors');
+        } else if (genes.palette >= 0.4 && genes.palette <= 0.6) {
+            traits.push('favors cool tones');
+        }
+
         // Return personality string
         if (traits.length === 0) {
             return 'A balanced puzzle designer';
@@ -438,8 +505,8 @@ export class Bot {
     static generateColors(genome) {
         const genes = genome.genes;
 
-        // Hue based on grid size (0-360), mapped from 7-80
-        const hue = Math.round(((genes.gridSize - 7) / 73) * 360) % 360;
+        // Use palette gene for hue (with fallback for old genomes)
+        const hue = Math.round((genes.palette !== undefined ? genes.palette : (genes.gridSize - 7) / 73) * 360) % 360;
 
         // Saturation based on complexity (30-90%), mapped from 20-200
         const saturation = 30 + Math.min(60, ((genes.complexity - 20) / 180) * 60);
@@ -550,9 +617,19 @@ export class Bot {
         const cavesDiff = Math.abs(myGenes.styleCaves - theirGenes.styleCaves) / 100;
         const roomsDiff = Math.abs(myGenes.styleClusteredRooms - theirGenes.styleClusteredRooms) / 100;
 
-        // Average over 8 dimensions
+        // Visual gene dimensions (each 0-1)
+        // Palette uses circular distance
+        const paletteDiff = Math.min(
+            Math.abs(myGenes.palette - theirGenes.palette),
+            1 - Math.abs(myGenes.palette - theirGenes.palette)
+        );
+        const tileStyleDiff = Math.abs(myGenes.tileStyle - theirGenes.tileStyle);
+        const decorationDiff = Math.abs(myGenes.decoration - theirGenes.decoration);
+
+        // Average over 11 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
-                         clustersDiff + mazeDiff + cavesDiff + roomsDiff) / 8;
+                         clustersDiff + mazeDiff + cavesDiff + roomsDiff +
+                         paletteDiff + tileStyleDiff + decorationDiff) / 11;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;

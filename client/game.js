@@ -9,19 +9,91 @@ export function getTileSize(w, h) {
     return Math.max(4, Math.floor(MAX_CANVAS / Math.max(w, h)));
 }
 
-// Color-based rendering
-export const COLORS = {
-    FLOOR: '#1a1a2e',
-    WALL: '#8B4513',
-    WALL_LIGHT: '#A0522D',
-    WALL_DARK: '#5C2E0A',
-    TARGET: '#E74C3C',
-    BOX: '#DAA520',
-    BOX_BORDER: '#B8860B',
-    PLAYER: '#4ECDC4',
-    BOX_ON_TARGET: '#4CAF50',
-    BOX_ON_TARGET_BORDER: '#388E3C'
-};
+// --- Helpers ---
+
+function hslStr(h, s, l) {
+    return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+function fillRoundedRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    if (r <= 0) { ctx.fillRect(x, y, w, h); return; }
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// --- Theme resolution ---
+
+// Default theme matching the original hardcoded colors (for tutorial levels)
+export const DEFAULT_THEME = Object.freeze({
+    colors: {
+        FLOOR: '#1a1a2e',
+        WALL: '#8B4513',
+        WALL_LIGHT: '#A0522D',
+        WALL_DARK: '#5C2E0A',
+        TARGET: '#E74C3C',
+        BOX: '#DAA520',
+        BOX_BORDER: '#B8860B',
+        PLAYER: '#4ECDC4',
+        BOX_ON_TARGET: '#4CAF50',
+        BOX_ON_TARGET_BORDER: '#388E3C'
+    },
+    cornerRadiusFactor: 0,
+    borderScale: 0.06,
+    boxInset: 0.08,
+    targetShape: 'diamond',
+    playerShape: 'circle',
+    floorPattern: 'none',
+    floorPatternAlpha: 0,
+    wallTexture: 'flat',
+    wallTextureAlpha: 0,
+    wallHighlight: false,
+    boxCross: false,
+    targetRings: 0
+});
+
+export function resolveVisualTheme(genome) {
+    const g = genome.genes;
+    const hue = g.palette * 360;
+    const ts = g.tileStyle;
+    const dec = g.decoration;
+
+    const colors = {
+        FLOOR:                hslStr(hue, 15, 12),
+        WALL:                 hslStr((hue + 30) % 360, 45, 35),
+        WALL_LIGHT:           hslStr((hue + 30) % 360, 45, 45),
+        WALL_DARK:            hslStr((hue + 30) % 360, 45, 23),
+        TARGET:               hslStr((hue + 180) % 360, 70, 55),
+        BOX:                  hslStr((hue + 60) % 360, 60, 55),
+        BOX_BORDER:           hslStr((hue + 60) % 360, 60, 43),
+        BOX_ON_TARGET:        hslStr((hue + 120) % 360, 60, 48),
+        BOX_ON_TARGET_BORDER: hslStr((hue + 120) % 360, 60, 38),
+        PLAYER:               hslStr((hue + 210) % 360, 65, 60)
+    };
+
+    return {
+        colors,
+        // cornerRadius is per-tile; multiplied by tileSize at render time
+        cornerRadiusFactor: ts * 0.4,
+        borderScale: (1 - ts) * 0.12 + 0.02,
+        boxInset: 0.08 + ts * 0.12,
+        targetShape: ts < 0.33 ? 'diamond' : ts < 0.66 ? 'cross' : 'circle',
+        playerShape: ts < 0.5 ? 'rounded_square' : 'circle',
+        floorPattern: dec < 0.25 ? 'none' : dec < 0.50 ? 'dots' : dec < 0.75 ? 'grid_lines' : 'crosshatch',
+        floorPatternAlpha: dec * 0.15,
+        wallTexture: dec < 0.33 ? 'flat' : dec < 0.66 ? 'lines' : 'brick',
+        wallTextureAlpha: Math.max(0, (dec - 0.25)) * 0.25,
+        wallHighlight: dec > 0.5,
+        boxCross: dec > 0.4,
+        targetRings: Math.floor(dec * 3)  // 0, 1, or 2
+    };
+}
 
 // Game state
 export class Game {
@@ -101,6 +173,7 @@ export class Game {
         }
 
         this.currentLevel = levelNum;
+        this.currentTheme = null; // Tutorial levels use DEFAULT_THEME
         const level = LEVELS[levelNum];
         this.width = level.width;
         this.height = level.height;
@@ -179,6 +252,9 @@ export class Game {
 
         // Create bot for the chosen genome
         this.currentBot = new Bot(chosenGenome);
+
+        // Resolve visual theme from the chosen genome
+        this.currentTheme = resolveVisualTheme(chosenGenome);
 
         // Track curation decision
         this.curationStats.push({
@@ -383,8 +459,11 @@ export class Game {
         const ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+        const theme = this.currentTheme || DEFAULT_THEME;
+        const C = theme.colors;
         const ts = getTileSize(this.width, this.height);
-        const pad = Math.max(1, ts * 0.06); // padding for borders
+        const cr = (theme.cornerRadiusFactor || 0) * ts;
+        const pad = Math.max(1, ts * theme.borderScale);
 
         // Draw grid
         for (let y = 0; y < this.height; y++) {
@@ -394,56 +473,186 @@ export class Game {
                 const py = y * ts;
 
                 // Floor background for every tile
-                ctx.fillStyle = COLORS.FLOOR;
+                ctx.fillStyle = C.FLOOR;
                 ctx.fillRect(px, py, ts, ts);
 
+                // Floor pattern overlay
+                if (theme.floorPattern !== 'none' && theme.floorPatternAlpha > 0 && tile !== TILES.WALL) {
+                    ctx.save();
+                    ctx.globalAlpha = theme.floorPatternAlpha;
+                    ctx.strokeStyle = C.WALL;
+                    ctx.lineWidth = 1;
+                    const cx = px + ts / 2;
+                    const cy = py + ts / 2;
+                    if (theme.floorPattern === 'dots') {
+                        ctx.fillStyle = C.WALL;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, ts * 0.04, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (theme.floorPattern === 'grid_lines') {
+                        ctx.beginPath();
+                        ctx.moveTo(px, py + ts);
+                        ctx.lineTo(px + ts, py + ts);
+                        ctx.moveTo(px + ts, py);
+                        ctx.lineTo(px + ts, py + ts);
+                        ctx.stroke();
+                    } else if (theme.floorPattern === 'crosshatch') {
+                        ctx.beginPath();
+                        ctx.moveTo(px, py);
+                        ctx.lineTo(px + ts, py + ts);
+                        ctx.moveTo(px + ts, py);
+                        ctx.lineTo(px, py + ts);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+
                 if (tile === TILES.WALL) {
-                    // 3D-style wall
-                    ctx.fillStyle = COLORS.WALL_LIGHT;
-                    ctx.fillRect(px, py, ts, ts);
-                    ctx.fillStyle = COLORS.WALL;
-                    ctx.fillRect(px + pad, py + pad, ts - pad, ts - pad);
-                    ctx.fillStyle = COLORS.WALL_DARK;
+                    // 3D-style wall with optional rounding
+                    ctx.fillStyle = C.WALL_LIGHT;
+                    fillRoundedRect(ctx, px, py, ts, ts, cr);
+                    ctx.fillStyle = C.WALL;
+                    fillRoundedRect(ctx, px + pad, py + pad, ts - pad, ts - pad, cr * 0.8);
+                    ctx.fillStyle = C.WALL_DARK;
                     ctx.fillRect(px + pad, py + ts - pad, ts - pad, pad);
                     ctx.fillRect(px + ts - pad, py + pad, pad, ts - pad);
+
+                    // Wall texture overlay
+                    if (theme.wallTexture !== 'flat' && theme.wallTextureAlpha > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = theme.wallTextureAlpha;
+                        ctx.strokeStyle = C.WALL_DARK;
+                        ctx.lineWidth = 1;
+                        if (theme.wallTexture === 'lines') {
+                            for (let i = 0.25; i < 1; i += 0.25) {
+                                ctx.beginPath();
+                                ctx.moveTo(px + pad, py + ts * i);
+                                ctx.lineTo(px + ts - pad, py + ts * i);
+                                ctx.stroke();
+                            }
+                        } else if (theme.wallTexture === 'brick') {
+                            const bh = ts / 3;
+                            for (let row = 0; row < 3; row++) {
+                                const by = py + row * bh;
+                                ctx.beginPath();
+                                ctx.moveTo(px + pad, by + bh);
+                                ctx.lineTo(px + ts - pad, by + bh);
+                                ctx.stroke();
+                                const offset = row % 2 === 0 ? 0 : ts / 2;
+                                ctx.beginPath();
+                                ctx.moveTo(px + offset + ts / 2, by);
+                                ctx.lineTo(px + offset + ts / 2, by + bh);
+                                ctx.stroke();
+                            }
+                        }
+                        ctx.restore();
+                    }
+
+                    // Wall highlight (top-left shine)
+                    if (theme.wallHighlight) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.15;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(px + pad, py + pad, (ts - pad * 2) * 0.4, pad * 2);
+                        ctx.fillRect(px + pad, py + pad, pad * 2, (ts - pad * 2) * 0.4);
+                        ctx.restore();
+                    }
                 } else if (tile === TILES.TARGET) {
-                    // Diamond/marker on floor
-                    ctx.fillStyle = COLORS.TARGET;
+                    // Target marker
                     const cx = px + ts / 2;
                     const cy = py + ts / 2;
                     const r = ts * 0.2;
-                    ctx.beginPath();
-                    ctx.moveTo(cx, cy - r);
-                    ctx.lineTo(cx + r, cy);
-                    ctx.lineTo(cx, cy + r);
-                    ctx.lineTo(cx - r, cy);
-                    ctx.closePath();
-                    ctx.fill();
-                } else if (tile === TILES.BOX) {
-                    // Amber box with border
-                    ctx.fillStyle = COLORS.BOX_BORDER;
-                    ctx.fillRect(px + pad, py + pad, ts - pad * 2, ts - pad * 2);
-                    ctx.fillStyle = COLORS.BOX;
-                    ctx.fillRect(px + pad * 3, py + pad * 3, ts - pad * 6, ts - pad * 6);
-                } else if (tile === TILES.BOX_ON_TARGET) {
-                    // Green box with border
-                    ctx.fillStyle = COLORS.BOX_ON_TARGET_BORDER;
-                    ctx.fillRect(px + pad, py + pad, ts - pad * 2, ts - pad * 2);
-                    ctx.fillStyle = COLORS.BOX_ON_TARGET;
-                    ctx.fillRect(px + pad * 3, py + pad * 3, ts - pad * 6, ts - pad * 6);
+
+                    // Concentric rings
+                    for (let ring = theme.targetRings; ring > 0; ring--) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.2;
+                        ctx.strokeStyle = C.TARGET;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, r + ring * ts * 0.1, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    ctx.fillStyle = C.TARGET;
+                    if (theme.targetShape === 'diamond') {
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy - r);
+                        ctx.lineTo(cx + r, cy);
+                        ctx.lineTo(cx, cy + r);
+                        ctx.lineTo(cx - r, cy);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else if (theme.targetShape === 'cross') {
+                        const arm = r * 0.4;
+                        ctx.beginPath();
+                        ctx.moveTo(cx - arm, cy - r);
+                        ctx.lineTo(cx + arm, cy - r);
+                        ctx.lineTo(cx + arm, cy - arm);
+                        ctx.lineTo(cx + r, cy - arm);
+                        ctx.lineTo(cx + r, cy + arm);
+                        ctx.lineTo(cx + arm, cy + arm);
+                        ctx.lineTo(cx + arm, cy + r);
+                        ctx.lineTo(cx - arm, cy + r);
+                        ctx.lineTo(cx - arm, cy + arm);
+                        ctx.lineTo(cx - r, cy + arm);
+                        ctx.lineTo(cx - r, cy - arm);
+                        ctx.lineTo(cx - arm, cy - arm);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        // circle
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else if (tile === TILES.BOX || tile === TILES.BOX_ON_TARGET) {
+                    const isOnTarget = tile === TILES.BOX_ON_TARGET;
+                    const borderColor = isOnTarget ? C.BOX_ON_TARGET_BORDER : C.BOX_BORDER;
+                    const faceColor = isOnTarget ? C.BOX_ON_TARGET : C.BOX;
+                    const inset = ts * theme.boxInset;
+
+                    // Border
+                    ctx.fillStyle = borderColor;
+                    fillRoundedRect(ctx, px + pad, py + pad, ts - pad * 2, ts - pad * 2, cr);
+                    // Face
+                    ctx.fillStyle = faceColor;
+                    fillRoundedRect(ctx, px + inset, py + inset, ts - inset * 2, ts - inset * 2, cr * 0.6);
+
+                    // Box cross decoration
+                    if (theme.boxCross) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.25;
+                        ctx.strokeStyle = borderColor;
+                        ctx.lineWidth = Math.max(1, ts * 0.04);
+                        ctx.beginPath();
+                        ctx.moveTo(px + inset, py + inset);
+                        ctx.lineTo(px + ts - inset, py + ts - inset);
+                        ctx.moveTo(px + ts - inset, py + inset);
+                        ctx.lineTo(px + inset, py + ts - inset);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
                 }
                 // FLOOR: already drawn as background
             }
         }
 
-        // Draw player on top as a circle
+        // Draw player on top
         const pcx = this.playerX * ts + ts / 2;
         const pcy = this.playerY * ts + ts / 2;
         const pr = ts * 0.35;
-        ctx.fillStyle = COLORS.PLAYER;
-        ctx.beginPath();
-        ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = C.PLAYER;
+
+        if (theme.playerShape === 'circle') {
+            ctx.beginPath();
+            ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // rounded_square
+            fillRoundedRect(ctx, pcx - pr, pcy - pr, pr * 2, pr * 2, pr * 0.4);
+        }
     }
 
     // === BREEDING MODE METHODS ===
@@ -522,13 +731,17 @@ export class Game {
         const display = document.getElementById('population-stats');
         display.style.display = 'block';
         const sw = stats.styleWeights;
+        const va = stats.visualAverages;
+        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
+        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
         display.innerHTML = `
             <strong>Population Averages (Gen ${stats.generation}):</strong><br>
             Grid: ${stats.averages.gridSize} |
             Boxes: ${stats.averages.boxCount} |
             Complexity: ${stats.averages.complexity} |
             Density: ${stats.averages.wallDensity}<br>
-            <span style="color: #a78bfa;">Clusters ${sw.clusters}% / Maze ${sw.maze}% / Caves ${sw.caves}% / Rooms ${sw.clusteredRooms}%</span>
+            <span style="color: #a78bfa;">Clusters ${sw.clusters}% / Maze ${sw.maze}% / Caves ${sw.caves}% / Rooms ${sw.clusteredRooms}%</span><br>
+            <span style="color: #f0abfc;">Palette: ${va.palette}&deg; | Style: ${tsLabel} | Decor: ${decLabel}</span>
         `;
 
         // Update curation stats if available
@@ -549,7 +762,8 @@ export class Game {
             generation: stats.generation,
             timestamp: Date.now(),
             averages: stats.averages,
-            styleWeights: stats.styleWeights
+            styleWeights: stats.styleWeights,
+            visualAverages: stats.visualAverages
         });
         this.savePersistentState();
     }
@@ -634,6 +848,9 @@ export class Game {
         html += '<th style="padding: 5px; text-align: right; color: #aaa;">Complex</th>';
         html += '<th style="padding: 5px; text-align: right; color: #aaa;">Density</th>';
         html += '<th style="padding: 5px; text-align: right; color: #aaa;">Style</th>';
+        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Palette</th>';
+        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Tile</th>';
+        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Decor</th>';
         html += '</tr></thead><tbody>';
 
         this.generationHistory.forEach(entry => {
@@ -649,6 +866,15 @@ export class Game {
                 ].sort((a, b) => b.pct - a.pct);
                 styleLabel = `${styles[0].name} ${styles[0].pct}%`;
             }
+            // Visual averages (backward compat for old history entries)
+            const va = entry.visualAverages || {};
+            const paletteLabel = va.palette !== undefined ? `${va.palette}\u00b0` : '-';
+            const tileLabel = va.tileStyle !== undefined
+                ? (va.tileStyle < 0.33 ? 'Ang' : va.tileStyle < 0.66 ? 'Bal' : 'Org')
+                : '-';
+            const decorLabel = va.decoration !== undefined
+                ? (va.decoration < 0.33 ? 'Min' : va.decoration < 0.66 ? 'Mod' : 'Rich')
+                : '-';
             html += '<tr style="border-bottom: 1px solid #333;">';
             html += `<td style="padding: 5px; color: #e0e0e0;">${entry.generation}</td>`;
             html += `<td style="padding: 5px; text-align: right; color: #4ade80;">${entry.averages.gridSize}</td>`;
@@ -656,6 +882,9 @@ export class Game {
             html += `<td style="padding: 5px; text-align: right; color: #fbbf24;">${entry.averages.complexity}</td>`;
             html += `<td style="padding: 5px; text-align: right; color: #f87171;">${entry.averages.wallDensity}</td>`;
             html += `<td style="padding: 5px; text-align: right; color: #a78bfa;">${styleLabel}</td>`;
+            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${paletteLabel}</td>`;
+            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${tileLabel}</td>`;
+            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${decorLabel}</td>`;
             html += '</tr>';
         });
 
@@ -766,6 +995,9 @@ export class Game {
 
         // Show stats
         const stats = this.population.getStats();
-        alert(`Generation ${this.population.generation} created!\n\nAvg Grid Size: ${stats.averages.gridSize}\nAvg Boxes: ${stats.averages.boxCount}\nAvg Complexity: ${stats.averages.complexity}\nAvg Wall Density: ${stats.averages.wallDensity}`);
+        const va = stats.visualAverages;
+        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
+        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
+        alert(`Generation ${this.population.generation} created!\n\nAvg Grid Size: ${stats.averages.gridSize}\nAvg Boxes: ${stats.averages.boxCount}\nAvg Complexity: ${stats.averages.complexity}\nAvg Wall Density: ${stats.averages.wallDensity}\n\nPalette: ${va.palette}\u00b0 | Style: ${tsLabel} | Decor: ${decLabel}`);
     }
 }
