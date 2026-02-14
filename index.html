@@ -313,7 +313,7 @@
     </div>
 
     <div class="instructions">
-        Use Arrow Keys, WASD, or touch controls • Push all 📦 onto 🎯 to win
+        Use Arrow Keys, WASD, or touch controls • Push all boxes onto targets to win
     </div>
 
     <script src="generator.js"></script>
@@ -330,14 +330,18 @@
             BOX_ON_TARGET: 5
         };
 
-        // Emoji rendering
-        const EMOJI = {
-            [TILES.FLOOR]: '⬛',
-            [TILES.WALL]: '🟫',
-            [TILES.TARGET]: '🎯',
-            [TILES.BOX]: '📦',
-            [TILES.PLAYER]: '👤',
-            [TILES.BOX_ON_TARGET]: '✅'
+        // Color-based rendering
+        const COLORS = {
+            FLOOR: '#1a1a2e',
+            WALL: '#8B4513',
+            WALL_LIGHT: '#A0522D',
+            WALL_DARK: '#5C2E0A',
+            TARGET: '#E74C3C',
+            BOX: '#DAA520',
+            BOX_BORDER: '#B8860B',
+            PLAYER: '#4ECDC4',
+            BOX_ON_TARGET: '#4CAF50',
+            BOX_ON_TARGET_BORDER: '#388E3C'
         };
 
         // Level data (1 = wall, 0 = floor, 2 = target, 3 = box, 4 = player)
@@ -756,28 +760,70 @@
             }
 
             render() {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.font = `${TILE_SIZE - 10}px Arial`;
-                this.ctx.textAlign = 'center';
-                this.ctx.textBaseline = 'middle';
+                const ctx = this.ctx;
+                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                const ts = TILE_SIZE;
+                const pad = Math.max(1, ts * 0.06); // padding for borders
 
                 // Draw grid
                 for (let y = 0; y < this.height; y++) {
                     for (let x = 0; x < this.width; x++) {
                         const tile = this.getTile(x, y);
-                        const emoji = EMOJI[tile];
+                        const px = x * ts;
+                        const py = y * ts;
 
-                        const px = x * TILE_SIZE + TILE_SIZE / 2;
-                        const py = y * TILE_SIZE + TILE_SIZE / 2;
+                        // Floor background for every tile
+                        ctx.fillStyle = COLORS.FLOOR;
+                        ctx.fillRect(px, py, ts, ts);
 
-                        this.ctx.fillText(emoji, px, py);
+                        if (tile === TILES.WALL) {
+                            // 3D-style wall
+                            ctx.fillStyle = COLORS.WALL_LIGHT;
+                            ctx.fillRect(px, py, ts, ts);
+                            ctx.fillStyle = COLORS.WALL;
+                            ctx.fillRect(px + pad, py + pad, ts - pad, ts - pad);
+                            ctx.fillStyle = COLORS.WALL_DARK;
+                            ctx.fillRect(px + pad, py + ts - pad, ts - pad, pad);
+                            ctx.fillRect(px + ts - pad, py + pad, pad, ts - pad);
+                        } else if (tile === TILES.TARGET) {
+                            // Diamond/marker on floor
+                            ctx.fillStyle = COLORS.TARGET;
+                            const cx = px + ts / 2;
+                            const cy = py + ts / 2;
+                            const r = ts * 0.2;
+                            ctx.beginPath();
+                            ctx.moveTo(cx, cy - r);
+                            ctx.lineTo(cx + r, cy);
+                            ctx.lineTo(cx, cy + r);
+                            ctx.lineTo(cx - r, cy);
+                            ctx.closePath();
+                            ctx.fill();
+                        } else if (tile === TILES.BOX) {
+                            // Amber box with border
+                            ctx.fillStyle = COLORS.BOX_BORDER;
+                            ctx.fillRect(px + pad, py + pad, ts - pad * 2, ts - pad * 2);
+                            ctx.fillStyle = COLORS.BOX;
+                            ctx.fillRect(px + pad * 3, py + pad * 3, ts - pad * 6, ts - pad * 6);
+                        } else if (tile === TILES.BOX_ON_TARGET) {
+                            // Green box with border
+                            ctx.fillStyle = COLORS.BOX_ON_TARGET_BORDER;
+                            ctx.fillRect(px + pad, py + pad, ts - pad * 2, ts - pad * 2);
+                            ctx.fillStyle = COLORS.BOX_ON_TARGET;
+                            ctx.fillRect(px + pad * 3, py + pad * 3, ts - pad * 6, ts - pad * 6);
+                        }
+                        // FLOOR: already drawn as background
                     }
                 }
 
-                // Draw player on top
-                const px = this.playerX * TILE_SIZE + TILE_SIZE / 2;
-                const py = this.playerY * TILE_SIZE + TILE_SIZE / 2;
-                this.ctx.fillText(EMOJI[TILES.PLAYER], px, py);
+                // Draw player on top as a circle
+                const pcx = this.playerX * ts + ts / 2;
+                const pcy = this.playerY * ts + ts / 2;
+                const pr = ts * 0.35;
+                ctx.fillStyle = COLORS.PLAYER;
+                ctx.beginPath();
+                ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+                ctx.fill();
             }
 
             // === BREEDING MODE METHODS ===

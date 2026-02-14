@@ -268,6 +268,108 @@ class SokobanGenerator {
         return accessibleSides >= 2;
     }
 
+    canReachAroundBox(grid, boxPos, otherBoxes) {
+        // Check if the player can navigate from one pushable side of the box
+        // to another via a walkable path (a "loop"), enabling the box to be pushed
+        // from multiple directions even when adjacent to walls.
+
+        const bx = boxPos % this.width;
+        const by = Math.floor(boxPos / this.width);
+
+        const directions = [
+            { dx: 0, dy: -1, axis: 'v' }, // up
+            { dx: 0, dy:  1, axis: 'v' }, // down
+            { dx: -1, dy: 0, axis: 'h' }, // left
+            { dx:  1, dy: 0, axis: 'h' }  // right
+        ];
+
+        // Find all accessible sides of the box (floor, not wall, not another box)
+        const pushSides = [];
+        for (const dir of directions) {
+            const nx = bx + dir.dx;
+            const ny = by + dir.dy;
+            if (!this.isValidPosition(nx, ny)) continue;
+            const nPos = ny * this.width + nx;
+            if (grid[nPos] !== this.TILES.WALL && !otherBoxes.includes(nPos)) {
+                pushSides.push({ pos: nPos, axis: dir.axis });
+            }
+        }
+
+        if (pushSides.length < 2) return false;
+
+        // Check if any two push sides on different axes are connected by a walkable path
+        for (let i = 0; i < pushSides.length; i++) {
+            for (let j = i + 1; j < pushSides.length; j++) {
+                if (pushSides[i].axis === pushSides[j].axis) continue;
+                if (this.bfsConnected(grid, pushSides[i].pos, pushSides[j].pos, boxPos, otherBoxes)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    bfsConnected(grid, from, to, excludeBox, excludeBoxes) {
+        // BFS to check if 'from' and 'to' are connected via walkable tiles,
+        // excluding the box position itself and other boxes.
+        const queue = [from];
+        const visited = new Set([from]);
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (current === to) return true;
+
+            const cx = current % this.width;
+            const cy = Math.floor(current / this.width);
+
+            const offsets = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+            for (const [dx, dy] of offsets) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (!this.isValidPosition(nx, ny)) continue;
+                const nPos = ny * this.width + nx;
+                if (visited.has(nPos)) continue;
+                if (grid[nPos] === this.TILES.WALL) continue;
+                if (nPos === excludeBox) continue;
+                if (excludeBoxes.includes(nPos)) continue;
+                visited.add(nPos);
+                queue.push(nPos);
+            }
+        }
+
+        return false;
+    }
+
+    getPlayerReachable(grid, playerPos, boxes) {
+        // BFS flood-fill from player position.
+        // Walls and boxes are impassable. Returns a Set of all
+        // positions the player can walk to.
+        const reachable = new Set([playerPos]);
+        const queue = [playerPos];
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            const cx = current % this.width;
+            const cy = Math.floor(current / this.width);
+
+            const offsets = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+            for (const [dx, dy] of offsets) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (!this.isValidPosition(nx, ny)) continue;
+                const nPos = ny * this.width + nx;
+                if (reachable.has(nPos)) continue;
+                if (grid[nPos] === this.TILES.WALL) continue;
+                if (boxes.includes(nPos)) continue;
+                reachable.add(nPos);
+                queue.push(nPos);
+            }
+        }
+
+        return reachable;
+    }
+
     isFreezeDeadlock(grid, x, y, targets) {
         // A box is freeze-deadlocked if it's against a wall and can't reach
         // a target by sliding along that wall
@@ -351,6 +453,17 @@ class SokobanGenerator {
     }
 
     reversePlay(grid, boxes, playerPos, targets) {
+        // Uses PULL-based reverse play (not pushes).
+        //
+        // A pull works like this:
+        //   - Player stands adjacent to a box (at boxPos + d)
+        //   - Player steps AWAY in direction d (to boxPos + 2d)
+        //   - Box follows into player's old spot (from boxPos to boxPos + d)
+        //
+        // The undo of a pull (= the forward game push) is:
+        //   - Player at boxPos + 2d pushes box from boxPos + d back to boxPos
+        //   - Player is already in the correct position, so solvability is guaranteed.
+
         const state = {
             grid: [...grid],
             boxes: [...boxes],
@@ -373,45 +486,55 @@ class SokobanGenerator {
             const boxX = boxPos % this.width;
             const boxY = Math.floor(boxPos / this.width);
 
+            // Compute player reachability once per step (BFS flood-fill
+            // from current player position, treating walls and boxes as impassable)
+            const reachable = this.getPlayerReachable(state.grid, state.playerPos, state.boxes);
+
             this.shuffle(moves);
 
             for (const [dx, dy] of moves) {
-                // New box position (where box will be pulled to)
+                // Pull direction d = (dx, dy): box moves from boxPos to boxPos + d
                 const newBoxX = boxX + dx;
                 const newBoxY = boxY + dy;
                 const newBoxPos = newBoxY * this.width + newBoxX;
 
-                // Player needs to be opposite of pull direction
-                const playerX = boxX - dx;
-                const playerY = boxY - dy;
-                const newPlayerPos = playerY * this.width + playerX;
+                // Player must stand at newBoxPos (adjacent to box, on the pull side)
+                // then steps to playerDest = boxPos + 2d (one cell beyond newBoxPos)
+                const playerDestX = boxX + 2 * dx;
+                const playerDestY = boxY + 2 * dy;
 
-                // Validate positions
+                // Validate all positions are in bounds
                 if (!this.isValidPosition(newBoxX, newBoxY)) continue;
-                if (!this.isValidPosition(playerX, playerY)) continue;
+                if (!this.isValidPosition(playerDestX, playerDestY)) continue;
 
-                const newBoxTile = state.grid[newBoxPos];
-                const playerTile = state.grid[newPlayerPos];
+                const playerDest = playerDestY * this.width + playerDestX;
 
-                // Check if move is valid
-                if (playerTile === this.TILES.WALL) continue;
-                if (newBoxTile === this.TILES.WALL) continue;
+                // newBoxPos must be empty floor (box destination)
+                if (state.grid[newBoxPos] === this.TILES.WALL) continue;
                 if (state.boxes.includes(newBoxPos)) continue;
+
+                // playerDest must be empty floor (player steps there during pull)
+                if (state.grid[playerDest] === this.TILES.WALL) continue;
+                if (state.boxes.includes(playerDest)) continue;
+
+                // Player must be able to walk to newBoxPos to initiate the pull
+                if (!reachable.has(newBoxPos)) continue;
 
                 // Check new box position isn't a deadlock
                 if (this.isDeadlock(state.grid, newBoxPos, targets)) continue;
 
-                // Don't pull boxes to positions adjacent to walls
-                // (Unless that position is a target)
-                if (!targets.includes(newBoxPos) && this.isAdjacentToWall(state.grid, newBoxX, newBoxY)) continue;
-
-                // Also check if player can access this box from multiple sides
-                // (needed to push it toward targets later)
+                // Quick filter: need at least 2 accessible sides
                 if (!this.isBoxAccessible(state.grid, newBoxPos, state.boxes, targets)) continue;
 
-                // Valid move!
+                // Loop check: verify paths exist around the box for multi-axis pushing
+                if (!targets.includes(newBoxPos)) {
+                    const otherBoxes = state.boxes.filter((_, idx) => idx !== boxIdx);
+                    if (!this.canReachAroundBox(state.grid, newBoxPos, otherBoxes)) continue;
+                }
+
+                // Valid pull!
                 state.boxes[boxIdx] = newBoxPos;
-                state.playerPos = boxPos; // Player moves to where box was
+                state.playerPos = playerDest;
                 successfulMoves++;
                 break;
             }
