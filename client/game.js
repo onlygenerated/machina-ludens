@@ -37,12 +37,13 @@ export const DEFAULT_THEME = Object.freeze({
         WALL: '#8B4513',
         WALL_LIGHT: '#A0522D',
         WALL_DARK: '#5C2E0A',
-        TARGET: '#E74C3C',
-        BOX: '#DAA520',
-        BOX_BORDER: '#B8860B',
-        PLAYER: '#4ECDC4',
-        BOX_ON_TARGET: '#4CAF50',
-        BOX_ON_TARGET_BORDER: '#388E3C'
+        TARGET: 'hsl(230, 40%, 20%)',
+        TARGET_HIGHLIGHT: 'hsl(230, 35%, 30%)',
+        BOX: 'hsl(32, 40%, 62%)',
+        BOX_SHADOW: 'hsl(32, 30%, 40%)',
+        CHECK: 'hsl(145, 65%, 30%)',
+        CHECK_SHADOW: 'hsl(145, 40%, 15%)',
+        PLAYER: 'hsl(14, 80%, 58%)'
     },
     cornerRadiusFactor: 0,
     borderScale: 0.06,
@@ -65,16 +66,19 @@ export function resolveVisualTheme(genome) {
     const dec = g.decoration;
 
     const colors = {
+        // Environment colors vary with genome palette
         FLOOR:                hslStr(hue, 15, 12),
         WALL:                 hslStr((hue + 30) % 360, 45, 35),
         WALL_LIGHT:           hslStr((hue + 30) % 360, 45, 45),
         WALL_DARK:            hslStr((hue + 30) % 360, 45, 23),
-        TARGET:               hslStr((hue + 180) % 360, 70, 55),
-        BOX:                  hslStr((hue + 60) % 360, 60, 55),
-        BOX_BORDER:           hslStr((hue + 60) % 360, 60, 43),
-        BOX_ON_TARGET:        hslStr((hue + 120) % 360, 60, 48),
-        BOX_ON_TARGET_BORDER: hslStr((hue + 120) % 360, 60, 38),
-        PLAYER:               hslStr((hue + 210) % 360, 65, 60)
+        // Game piece colors are fixed for consistency across phenotypes
+        TARGET:               'hsl(230, 40%, 20%)',    // dark indigo pit
+        TARGET_HIGHLIGHT:     'hsl(230, 35%, 30%)',    // pit edge highlight
+        BOX:                  'hsl(32, 40%, 62%)',     // warm tan/sandstone rock
+        BOX_SHADOW:           'hsl(32, 30%, 40%)',     // rock shadow
+        CHECK:                'hsl(145, 65%, 30%)',    // dark green check mark
+        CHECK_SHADOW:         'hsl(145, 40%, 15%)',    // check shadow
+        PLAYER:               'hsl(14, 80%, 58%)'     // coral/orange accent
     };
 
     return {
@@ -558,81 +562,77 @@ export class Game {
                         ctx.restore();
                     }
                 } else if (tile === TILES.TARGET) {
-                    // Target marker
-                    const cx = px + ts / 2;
-                    const cy = py + ts / 2;
-                    const r = ts * 0.2;
-
-                    // Concentric rings
-                    for (let ring = theme.targetRings; ring > 0; ring--) {
-                        ctx.save();
-                        ctx.globalAlpha = 0.2;
-                        ctx.strokeStyle = C.TARGET;
-                        ctx.lineWidth = 1.5;
-                        ctx.beginPath();
-                        ctx.arc(cx, cy, r + ring * ts * 0.1, 0, Math.PI * 2);
-                        ctx.stroke();
-                        ctx.restore();
-                    }
-
+                    // Empty pit: dark indigo rounded square
+                    const pitInset = ts * 0.08;
+                    const pitSize = ts - pitInset * 2;
+                    const pitR = pitSize * 0.4;
+                    const so = Math.max(2, ts * 0.06); // shadow offset scales with tile
+                    // Edge highlight
+                    ctx.fillStyle = C.TARGET_HIGHLIGHT;
+                    fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
+                    // Pit surface
                     ctx.fillStyle = C.TARGET;
-                    if (theme.targetShape === 'diamond') {
-                        ctx.beginPath();
-                        ctx.moveTo(cx, cy - r);
-                        ctx.lineTo(cx + r, cy);
-                        ctx.lineTo(cx, cy + r);
-                        ctx.lineTo(cx - r, cy);
-                        ctx.closePath();
-                        ctx.fill();
-                    } else if (theme.targetShape === 'cross') {
-                        const arm = r * 0.4;
-                        ctx.beginPath();
-                        ctx.moveTo(cx - arm, cy - r);
-                        ctx.lineTo(cx + arm, cy - r);
-                        ctx.lineTo(cx + arm, cy - arm);
-                        ctx.lineTo(cx + r, cy - arm);
-                        ctx.lineTo(cx + r, cy + arm);
-                        ctx.lineTo(cx + arm, cy + arm);
-                        ctx.lineTo(cx + arm, cy + r);
-                        ctx.lineTo(cx - arm, cy + r);
-                        ctx.lineTo(cx - arm, cy + arm);
-                        ctx.lineTo(cx - r, cy + arm);
-                        ctx.lineTo(cx - r, cy - arm);
-                        ctx.lineTo(cx - arm, cy - arm);
-                        ctx.closePath();
-                        ctx.fill();
-                    } else {
-                        // circle
-                        ctx.beginPath();
-                        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
+                    fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
                 } else if (tile === TILES.BOX || tile === TILES.BOX_ON_TARGET) {
                     const isOnTarget = tile === TILES.BOX_ON_TARGET;
-                    const borderColor = isOnTarget ? C.BOX_ON_TARGET_BORDER : C.BOX_BORDER;
-                    const faceColor = isOnTarget ? C.BOX_ON_TARGET : C.BOX;
-                    const inset = ts * theme.boxInset;
+                    const cx = px + ts / 2;
+                    const cy = py + ts / 2;
+                    const half = ts * 0.5;  // points touch tile edges
+                    const so = Math.max(2, ts * 0.06);
 
-                    // Border
-                    ctx.fillStyle = borderColor;
-                    fillRoundedRect(ctx, px + pad, py + pad, ts - pad * 2, ts - pad * 2, cr);
-                    // Face
-                    ctx.fillStyle = faceColor;
-                    fillRoundedRect(ctx, px + inset, py + inset, ts - inset * 2, ts - inset * 2, cr * 0.6);
+                    if (isOnTarget) {
+                        // Draw the pit underneath
+                        const pitInset = ts * 0.08;
+                        const pitSize = ts - pitInset * 2;
+                        const pitR = pitSize * 0.4;
+                        ctx.fillStyle = C.TARGET_HIGHLIGHT;
+                        fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
+                        ctx.fillStyle = C.TARGET;
+                        fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
+                    }
 
-                    // Box cross decoration
-                    if (theme.boxCross) {
-                        ctx.save();
-                        ctx.globalAlpha = 0.25;
-                        ctx.strokeStyle = borderColor;
-                        ctx.lineWidth = Math.max(1, ts * 0.04);
+                    // Sharp diamond
+                    const dHalf = isOnTarget ? half * 0.82 : half;
+                    function drawDiamond(ox, oy) {
                         ctx.beginPath();
-                        ctx.moveTo(px + inset, py + inset);
-                        ctx.lineTo(px + ts - inset, py + ts - inset);
-                        ctx.moveTo(px + ts - inset, py + inset);
-                        ctx.lineTo(px + inset, py + ts - inset);
+                        ctx.moveTo(ox, oy - dHalf);       // top
+                        ctx.lineTo(ox + dHalf, oy);       // right
+                        ctx.lineTo(ox, oy + dHalf);       // bottom
+                        ctx.lineTo(ox - dHalf, oy);       // left
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+
+                    // Rock shadow
+                    ctx.fillStyle = C.BOX_SHADOW;
+                    drawDiamond(cx + so, cy + so);
+
+                    // Rock surface
+                    ctx.fillStyle = C.BOX;
+                    drawDiamond(cx, cy);
+
+                    // Large green check mark on completed targets
+                    if (isOnTarget) {
+                        const lw = Math.max(3, ts * 0.12);
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.lineWidth = lw;
+                        // Check mark shifted up 4px
+                        const cUp = 4;
+                        // Shadow first (offset down-right)
+                        ctx.strokeStyle = C.CHECK_SHADOW;
+                        ctx.beginPath();
+                        ctx.moveTo(cx - ts * 0.28 + 2, cy - cUp + 2);
+                        ctx.lineTo(cx - ts * 0.06 + 2, cy + ts * 0.28 - cUp + 2);
+                        ctx.lineTo(cx + ts * 0.38 + 2, cy - ts * 0.30 - cUp + 2);
                         ctx.stroke();
-                        ctx.restore();
+                        // Check mark
+                        ctx.strokeStyle = C.CHECK;
+                        ctx.beginPath();
+                        ctx.moveTo(cx - ts * 0.28, cy - cUp);
+                        ctx.lineTo(cx - ts * 0.06, cy + ts * 0.28 - cUp);
+                        ctx.lineTo(cx + ts * 0.38, cy - ts * 0.30 - cUp);
+                        ctx.stroke();
                     }
                 }
                 // FLOOR: already drawn as background

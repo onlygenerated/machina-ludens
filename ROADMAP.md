@@ -3,14 +3,19 @@
 ## Current Status
 ✅ Minimal playable Sokoban prototype (web-based, mobile-friendly)
 ✅ Touch controls and swipe gestures (D-pad + swipe)
-✅ Procedural level generation with reverse-play algorithm
+✅ Procedural level generation with reverse-play algorithm (4 style algorithms)
 ✅ Genome-based evolution system with crossover and mutation
 ✅ Inline rating system with 5-star reviews
 ✅ Population breeding based on player ratings
 ✅ Auto-generated levels on page load
 ✅ Larger, more complex boards with internal obstacles
+✅ Cultural divergence validated (Phase 1.3 complete)
+✅ Visual bot representations with procedural personalities (Phase 2.1)
+✅ Bot curation system (Phase 2.2)
+✅ Evolvable visual genes (palette, tileStyle, decoration)
+✅ Consistent game piece rendering across phenotypes (fixed colors independent of genome)
 
-**Current Phase:** Phase 1 - Genetic Algorithm (ready for cultural divergence testing)
+**Current Phase:** Phase 2 - Bot Population (2.1 and 2.2 complete, 2.3 next)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
@@ -46,7 +51,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ---
 
-## Phase 1: Genetic Algorithm (CURRENT)
+## Phase 1: Genetic Algorithm ✅ COMPLETE
 **Goal:** Evolve level parameters without AI "bots" yet
 
 ### Milestone 1.1: Genome Definition ✅
@@ -63,32 +68,32 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [x] Generation counter tracks evolution progress
 - [x] Streamlined workflow: Generate → Play → Rate → Breed (when 3+ rated)
 
-### Milestone 1.3: Cultural Divergence Test (NEXT)
-- [ ] Run 20+ generations with different selection strategies
-- [ ] Track genome evolution over time (population stats already available)
-- [ ] Can outside observer distinguish "cultures"?
-- [ ] Document evolved preferences (e.g., "prefers large sparse boards" vs "small dense mazes")
+### Milestone 1.3: Cultural Divergence Test ✅
+- [x] Run 20+ generations with different selection strategies
+- [x] Track genome evolution over time (population stats already available)
+- [x] Can outside observer distinguish "cultures"?
+- [x] Document evolved preferences (e.g., "prefers large sparse boards" vs "small dense mazes")
 
-**Success Criteria:** Different selection preferences produce noticeably different level styles
+**Success Criteria:** ✅ Different selection preferences produce noticeably different level styles
 
 ---
 
-## Phase 2: Bot Population (Week 4-5)
+## Phase 2: Bot Population (IN PROGRESS)
 **Goal:** Add the "bots" layer - agents that explore and curate
 
-### Milestone 2.1: Bot Identity
-- [ ] Visual bot representation (procedurally generated from genome)
-- [ ] Bot carries genome parameters
+### Milestone 2.1: Bot Identity ✅
+- [x] Visual bot representation (procedurally generated from genome)
+- [x] Bot carries genome parameters
 - [ ] Display bot "family tree"
-- [ ] Name/ID system for bots
+- [x] Name/ID system for bots
 
-### Milestone 2.2: Bot Curation Simulation
-- [ ] Bots "explore" puzzle space (generate variations based on genome)
-- [ ] Bots evaluate puzzles (heuristic scoring based on preferences)
-- [ ] Bots present top picks to player
-- [ ] Player selects which bots reproduce
+### Milestone 2.2: Bot Curation Simulation ✅
+- [x] Bots "explore" puzzle space (generate variations based on genome)
+- [x] Bots evaluate puzzles (heuristic scoring based on preferences)
+- [x] Bots present top picks to player
+- [x] Player selects which bots reproduce
 
-### Milestone 2.3: Core Game Loop
+### Milestone 2.3: Core Game Loop (NEXT)
 - [ ] Release phase: bots generate puzzles
 - [ ] Curate phase: player plays bot selections
 - [ ] Evaluate phase: player rates experiences
@@ -174,24 +179,14 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ## Next Immediate Steps
 
-**Current Focus (Milestone 1.3):**
-1. Run cultural divergence experiments
-   - Generate 20+ generations with consistent rating strategy
-   - Try different strategies (prefer large boards, prefer small dense, prefer simple, etc.)
-   - Track how population averages shift over generations
-   - Document observable "cultures" that emerge
+**Current Focus (Milestone 2.3 - Core Game Loop):**
+1. Structure the full game session with clear phases
+2. Wire up Release → Curate → Evaluate → Breed → Observe cycle
+3. Polish the visual feedback for state transitions
 
-2. Optional quality improvements:
-   - Add solution length calculation (could inform ratings)
-   - Display genome parameters during gameplay
-   - Save/load population states for long-term evolution
-   - Generation history visualization
-
-**Success Metric:** Can demonstrate 3+ distinct evolved "cultures" with different level characteristics
-
-**After Phase 1:**
-- Phase 2: Add bot layer (visual representations, curation simulation)
+**After Phase 2:**
 - Phase 3: Introduce mechanic mutations (special tiles, rule variations)
+- Phase 4: Polish & UX (animations, sound, session structure)
 
 ---
 
@@ -220,4 +215,4 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ---
 
-*Last Updated: 2026-02-13*
+*Last Updated: 2026-02-15*
