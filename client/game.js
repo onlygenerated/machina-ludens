@@ -5,6 +5,14 @@ import { LEVELS } from './levels.js';
 // Game constants
 const MAX_CANVAS = 600;
 
+const PHASES = Object.freeze({
+    RELEASE: 'RELEASE',
+    PLAY: 'PLAY',
+    RATE: 'RATE',
+    BREED: 'BREED',
+    OBSERVE: 'OBSERVE'
+});
+
 export function getTileSize(w, h) {
     return Math.max(4, Math.floor(MAX_CANVAS / Math.max(w, h)));
 }
@@ -110,6 +118,9 @@ export class Game {
         this.history = [];
         this.won = false;
 
+        // Phase state
+        this.phase = PHASES.RELEASE;
+
         // Breeding mode state
         this.population = new Population(5); // Start with initial population
         this.currentBot = null; // Currently playing bot
@@ -125,12 +136,12 @@ export class Game {
         this.setupControls();
         this.setupTouchGestures();
 
-        // Generate first level automatically
-        this.generateLevel();
+        // Start the phase loop
+        this.startRelease();
     }
 
     handleTouch(dx, dy) {
-        if (this.won) return;
+        if (this.phase !== PHASES.PLAY) return;
         this.move(dx, dy);
     }
 
@@ -147,7 +158,7 @@ export class Game {
         }, { passive: false });
 
         this.canvas.addEventListener('touchend', (e) => {
-            if (this.won) return;
+            if (this.phase !== PHASES.PLAY) return;
 
             const touch = e.changedTouches[0];
             const deltaX = touch.clientX - touchStartX;
@@ -306,7 +317,7 @@ export class Game {
 
     setupControls() {
         document.addEventListener('keydown', (e) => {
-            if (this.won) return;
+            if (this.phase !== PHASES.PLAY) return;
 
             const key = e.key.toLowerCase();
 
@@ -315,9 +326,6 @@ export class Game {
                 e.preventDefault();
             } else if (key === 'r') {
                 this.reset();
-                e.preventDefault();
-            } else if (key === 'n') {
-                this.nextLevel();
                 e.preventDefault();
             } else {
                 const moves = {
@@ -444,6 +452,8 @@ export class Game {
         if (!hasLooseBox) {
             this.won = true;
             this.showWin("Level Complete!");
+            // Auto-transition to RATE after a brief delay
+            setTimeout(() => this.enterRatePhase(), 1200);
         }
     }
 
@@ -655,13 +665,226 @@ export class Game {
         }
     }
 
+    // === PHASE STATE MACHINE ===
+
+    setPhase(phase) {
+        this.phase = phase;
+        this.updatePhaseUI();
+    }
+
+    updatePhaseUI() {
+        const phase = this.phase;
+
+        // Update phase bar highlights
+        const steps = document.querySelectorAll('.phase-step');
+        const order = [PHASES.RELEASE, PHASES.PLAY, PHASES.RATE, PHASES.BREED, PHASES.OBSERVE];
+        const currentIdx = order.indexOf(phase);
+        steps.forEach((step, i) => {
+            step.classList.remove('active', 'completed');
+            if (i === currentIdx) step.classList.add('active');
+            else if (i < currentIdx) step.classList.add('completed');
+        });
+
+        // Element visibility by phase
+        const info = document.getElementById('info');
+        const canvas = this.canvas;
+        const releaseOverlay = document.getElementById('release-overlay');
+        const observeOverlay = document.getElementById('observe-overlay');
+        const touchControls = document.getElementById('touch-controls');
+        const playControls = document.getElementById('play-controls');
+        const ratingPanel = document.getElementById('rating-panel');
+        const phaseBar = document.getElementById('phase-bar');
+        const winMessage = document.getElementById('win-message');
+
+        // Default: hide everything
+        info.style.display = 'none';
+        releaseOverlay.style.display = 'none';
+        observeOverlay.style.display = 'none';
+        playControls.style.display = 'none';
+        ratingPanel.style.display = 'none';
+        canvas.style.opacity = '1';
+        winMessage.textContent = '';
+
+        // Mobile touch controls: only show during PLAY
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        touchControls.style.display = (phase === PHASES.PLAY && isMobile) ? 'flex' : 'none';
+
+        // Phase bar always visible
+        phaseBar.style.display = 'flex';
+
+        switch (phase) {
+            case PHASES.RELEASE:
+                releaseOverlay.style.display = 'flex';
+                canvas.style.opacity = '0.3';
+                break;
+            case PHASES.PLAY:
+                info.style.display = 'flex';
+                playControls.style.display = 'block';
+                break;
+            case PHASES.RATE:
+                info.style.display = 'flex';
+                ratingPanel.style.display = 'block';
+                break;
+            case PHASES.OBSERVE:
+                observeOverlay.style.display = 'flex';
+                canvas.style.opacity = '0.3';
+                break;
+        }
+    }
+
+    startRelease() {
+        // Generate the level data (heavy work deferred)
+        const overlay = document.getElementById('loading-overlay');
+        overlay.classList.add('visible');
+
+        setTimeout(() => {
+            this._doGenerateLevel();
+            overlay.classList.remove('visible');
+
+            // Populate release overlay with curator info
+            this._populateReleaseOverlay();
+            this.setPhase(PHASES.RELEASE);
+        }, 20);
+    }
+
+    _populateReleaseOverlay() {
+        if (!this.curatorBot) return;
+
+        const nameEl = document.getElementById('release-bot-name');
+        const personalityEl = document.getElementById('release-bot-personality');
+        const spriteCanvas = document.getElementById('release-bot-sprite');
+
+        nameEl.textContent = this.curatorBot.name;
+        nameEl.style.color = this.curatorBot.colors.primary;
+
+        personalityEl.textContent = this.curatorBot.personality;
+
+        const ctx = spriteCanvas.getContext('2d');
+        ctx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+        this.curatorBot.drawSprite(ctx, 50, 50, 80);
+    }
+
+    startPuzzle() {
+        this.setPhase(PHASES.PLAY);
+    }
+
+    enterRatePhase() {
+        this.currentLevelRating = 0;
+        this.updateRatingDisplay();
+        this.updateBotDisplay();
+        this.updateGenerationDisplay();
+
+        // Hide action buttons until a rating is given
+        document.getElementById('next-puzzle-btn').style.display = 'none';
+        document.getElementById('breed-btn').classList.remove('visible');
+
+        this.setPhase(PHASES.RATE);
+    }
+
+    giveUp() {
+        this.enterRatePhase();
+    }
+
+    triggerBreed() {
+        if (this.ratedBots.length < 3) return;
+
+        // Build fitness array
+        const avgRating = this.ratedBots.reduce((sum, r) => sum + r.rating, 0) / this.ratedBots.length;
+        const genomes = this.population.getCurrentGeneration();
+        const fitnessScores = genomes.map(genome => {
+            const rated = this.ratedBots.find(r => r.genome === genome);
+            return rated ? rated.rating : avgRating * 0.5;
+        });
+
+        // Evolve
+        this.population.evolve(fitnessScores);
+        this.saveGenerationHistory();
+
+        // Reset for new generation
+        this.ratedBots = [];
+        this.currentLevelRating = 0;
+        this.curationStats = [];
+        this.updateRatingDisplay();
+
+        // Hide breed button
+        document.getElementById('breed-btn').classList.remove('visible');
+
+        // Populate observe overlay
+        this._populateObserveOverlay();
+
+        // BREED is transient - go straight to OBSERVE
+        this.setPhase(PHASES.OBSERVE);
+    }
+
+    _populateObserveOverlay() {
+        const stats = this.population.getStats();
+        const va = stats.visualAverages;
+        const sw = stats.styleWeights;
+        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
+        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
+
+        document.getElementById('observe-generation').textContent = stats.generation;
+
+        const container = document.getElementById('observe-stats');
+        container.textContent = '';
+
+        const rows = [
+            ['Avg Grid Size', stats.averages.gridSize],
+            ['Avg Boxes', stats.averages.boxCount],
+            ['Avg Complexity', stats.averages.complexity],
+            ['Avg Wall Density', stats.averages.wallDensity],
+        ];
+        rows.forEach(([label, value]) => {
+            const div = document.createElement('div');
+            div.className = 'observe-stat';
+            const spanL = document.createElement('span');
+            spanL.className = 'observe-label';
+            spanL.textContent = label;
+            const spanV = document.createElement('span');
+            spanV.className = 'observe-value';
+            spanV.textContent = value;
+            div.append(spanL, spanV);
+            container.appendChild(div);
+        });
+
+        // Style mix row (spans full width)
+        const styleDiv = document.createElement('div');
+        styleDiv.className = 'observe-stat';
+        styleDiv.style.gridColumn = '1 / -1';
+        styleDiv.style.marginTop = '8px';
+        const styleL = document.createElement('span');
+        styleL.className = 'observe-label';
+        styleL.textContent = 'Style Mix';
+        const styleV = document.createElement('span');
+        styleV.className = 'observe-value';
+        styleV.style.color = '#a78bfa';
+        styleV.textContent = `Clusters ${sw.clusters}% / Maze ${sw.maze}% / Caves ${sw.caves}% / Rooms ${sw.clusteredRooms}%`;
+        styleDiv.append(styleL, styleV);
+        container.appendChild(styleDiv);
+
+        // Visual row
+        const visDiv = document.createElement('div');
+        visDiv.className = 'observe-stat';
+        visDiv.style.gridColumn = '1 / -1';
+        const visL = document.createElement('span');
+        visL.className = 'observe-label';
+        visL.textContent = 'Visual';
+        const visV = document.createElement('span');
+        visV.className = 'observe-value';
+        visV.style.color = '#f0abfc';
+        visV.textContent = `Palette ${va.palette}\u00b0 | ${tsLabel} | ${decLabel}`;
+        visDiv.append(visL, visV);
+        container.appendChild(visDiv);
+    }
+
+    startNextCycle() {
+        this.startRelease();
+    }
+
     // === BREEDING MODE METHODS ===
 
     rateCurrentLevel(rating) {
-        if (!this.currentBot) {
-            alert('Generate a level first!');
-            return;
-        }
+        if (!this.currentBot || this.phase !== PHASES.RATE) return;
 
         this.currentLevelRating = rating;
 
@@ -678,10 +901,11 @@ export class Game {
         // Update generation display
         this.updateGenerationDisplay();
 
-        // Show breed button if we have enough ratings
-        if (this.ratedBots.length >= 3) {
-            document.getElementById('breed-btn').classList.add('visible');
-        }
+        // Show/hide breed button and next puzzle button based on count
+        const breedBtn = document.getElementById('breed-btn');
+        const nextBtn = document.getElementById('next-puzzle-btn');
+        nextBtn.style.display = 'inline-block';
+        breedBtn.classList.toggle('visible', this.ratedBots.length >= 3);
     }
 
     updateRatingDisplay() {
@@ -799,10 +1023,7 @@ export class Game {
             this.generationHistory = [];
             this.ratedBots = [];
             this.currentLevelRating = 0;
-            this.updateGenerationDisplay();
-            this.updatePopulationStats();
-            alert('Evolution history cleared. Starting fresh!');
-            this.generateLevel();
+            this.startRelease();
         }
     }
 
@@ -941,12 +1162,10 @@ export class Game {
                 this.currentLevelRating = 0;
 
                 this.savePersistentState(); // Save to localStorage
-                this.updateGenerationDisplay();
-                this.updatePopulationStats();
 
                 alert(`Experiment "${data.experimentName || 'Unnamed'}" loaded!\n\nGeneration: ${this.population.generation}\nHistory entries: ${this.generationHistory.length}`);
 
-                this.generateLevel();
+                this.startRelease();
             } catch (err) {
                 alert('Failed to load experiment: ' + err.message);
                 console.error(err);
@@ -959,45 +1178,6 @@ export class Game {
     }
 
     breedNextGeneration() {
-        if (this.ratedBots.length < 3) {
-            alert('Rate at least 3 levels before breeding!');
-            return;
-        }
-
-        // Build fitness array for current population
-        // For genomes that were rated, use those ratings
-        // For unrated genomes, use average rating
-        const avgRating = this.ratedBots.reduce((sum, r) => sum + r.rating, 0) / this.ratedBots.length;
-
-        const genomes = this.population.getCurrentGeneration();
-        const fitnessScores = genomes.map(genome => {
-            // Find rating for this genome
-            const rated = this.ratedBots.find(r => r.genome === genome);
-            return rated ? rated.rating : avgRating * 0.5; // Unrated get half of average
-        });
-
-        // Evolve to next generation
-        this.population.evolve(fitnessScores);
-
-        // Save generation history
-        this.saveGenerationHistory();
-
-        // Reset rated bots for new generation
-        this.ratedBots = [];
-        this.currentLevelRating = 0;
-        this.curationStats = []; // Reset curation stats for new generation
-        this.updateRatingDisplay();
-        this.updateGenerationDisplay();
-        this.updatePopulationStats();
-
-        // Hide breed button
-        document.getElementById('breed-btn').classList.remove('visible');
-
-        // Show stats
-        const stats = this.population.getStats();
-        const va = stats.visualAverages;
-        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
-        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
-        alert(`Generation ${this.population.generation} created!\n\nAvg Grid Size: ${stats.averages.gridSize}\nAvg Boxes: ${stats.averages.boxCount}\nAvg Complexity: ${stats.averages.complexity}\nAvg Wall Density: ${stats.averages.wallDensity}\n\nPalette: ${va.palette}\u00b0 | Style: ${tsLabel} | Decor: ${decLabel}`);
+        this.triggerBreed();
     }
 }

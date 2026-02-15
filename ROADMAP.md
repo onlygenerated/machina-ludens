@@ -14,8 +14,9 @@
 ✅ Bot curation system (Phase 2.2)
 ✅ Evolvable visual genes (palette, tileStyle, decoration)
 ✅ Consistent game piece rendering across phenotypes (fixed colors independent of genome)
+✅ Phase-based game loop: Release → Play → Rate → Breed → Observe (Phase 2.3)
 
-**Current Phase:** Phase 2 - Bot Population (2.1 and 2.2 complete, 2.3 next)
+**Current Phase:** Phase 2 - Bot Population (2.1, 2.2, 2.3 complete)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
@@ -93,14 +94,16 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [x] Bots present top picks to player
 - [x] Player selects which bots reproduce
 
-### Milestone 2.3: Core Game Loop (NEXT)
-- [ ] Release phase: bots generate puzzles
-- [ ] Curate phase: player plays bot selections
-- [ ] Evaluate phase: player rates experiences
-- [ ] Breed phase: successful bots reproduce
-- [ ] Observe phase: view population stats
+### Milestone 2.3: Core Game Loop ✅
+- [x] Release phase: bot presents puzzle with sprite, name, and personality overlay
+- [x] Play phase: player solves puzzle with input guards (only active during Play)
+- [x] Rate phase: player rates experience with 5-star system after win or Give Up
+- [x] Breed phase: successful bots reproduce (transient, triggers evolution)
+- [x] Observe phase: view generation stats (grid, boxes, complexity, style mix, visuals)
+- [x] Phase bar UI with active/completed step indicators
+- [x] Full loop: Release → Play → Rate → (Next Puzzle or Breed) → Observe → Release
 
-**Success Criteria:** Full breeding loop feels like "tending a garden" of bot cultures
+**Success Criteria:** ✅ Full breeding loop feels like "tending a garden" of bot cultures
 
 ---
 
@@ -179,12 +182,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ## Next Immediate Steps
 
-**Current Focus (Milestone 2.3 - Core Game Loop):**
-1. Structure the full game session with clear phases
-2. Wire up Release → Curate → Evaluate → Breed → Observe cycle
-3. Polish the visual feedback for state transitions
-
-**After Phase 2:**
+**Phase 2 complete.** Next steps:
 - Phase 3: Introduce mechanic mutations (special tiles, rule variations)
 - Phase 4: Polish & UX (animations, sound, session structure)
 

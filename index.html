@@ -42,6 +42,54 @@
             max-width: 100%;
         }
 
+        /* Phase bar */
+        #phase-bar {
+            display: flex;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 15px;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .phase-step {
+            padding: 6px 16px;
+            font-size: 0.8em;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            position: relative;
+            transition: color 0.3s;
+        }
+
+        .phase-step.active {
+            color: #4ECDC4;
+        }
+
+        .phase-step.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #4ECDC4;
+        }
+
+        .phase-step.completed {
+            color: #4ade80;
+        }
+
+        .phase-step.completed::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #4ade80;
+        }
+
         #canvas {
             display: block;
             background: #1a1a1a;
@@ -50,6 +98,7 @@
             max-width: 100%;
             height: auto;
             touch-action: none;
+            transition: opacity 0.4s;
         }
 
         #touch-controls {
@@ -105,30 +154,23 @@
                 padding: 15px;
             }
 
-            #touch-controls {
-                display: flex;
-            }
-
             button {
                 padding: 10px 14px;
                 font-size: 0.9em;
             }
 
-            #controls {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-                justify-content: center;
+            .phase-step {
+                padding: 6px 8px;
+                font-size: 0.7em;
             }
 
             .instructions {
                 font-size: 0.75em;
             }
-        }
 
-        #controls {
-            margin-top: 20px;
-            text-align: center;
+            .overlay-inner {
+                padding: 20px;
+            }
         }
 
         .star-btn {
@@ -155,6 +197,7 @@
         }
 
         #rating-panel {
+            display: none;
             margin-top: 15px;
             padding: 15px;
             background: #2a2a2a;
@@ -197,6 +240,13 @@
 
         #breed-btn.visible {
             display: inline-block;
+        }
+
+        #next-puzzle-btn {
+            display: none;
+            margin-top: 10px;
+            background: #3a5a3a;
+            border-color: #5a7a5a;
         }
 
         button {
@@ -256,6 +306,97 @@
             animation: spin 0.6s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Overlays (Release + Observe) */
+        .game-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(26, 26, 30, 0.92);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            text-align: center;
+        }
+
+        .overlay-inner {
+            padding: 30px;
+            max-width: 400px;
+        }
+
+        .overlay-inner h2 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        .overlay-inner p {
+            color: #888;
+            font-size: 0.9em;
+            margin: 8px 0;
+        }
+
+        .overlay-inner button {
+            margin-top: 20px;
+            padding: 12px 28px;
+            font-size: 1em;
+            background: #4ECDC4;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .overlay-inner button:hover {
+            background: #5de0d7;
+        }
+
+        #release-bot-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 10px 0 5px 0;
+        }
+
+        #release-bot-personality {
+            font-style: italic;
+            color: #888;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+        }
+
+        /* Observe overlay stats */
+        .observe-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 0.85em;
+        }
+
+        .observe-label {
+            color: #888;
+        }
+
+        .observe-value {
+            color: #e0e0e0;
+            font-weight: bold;
+        }
+
+        #observe-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 20px;
+            margin: 15px 0;
+            text-align: left;
+        }
+
+        /* Play controls */
+        #play-controls {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -263,6 +404,14 @@
     <div class="subtitle">Sokoban Prototype</div>
 
     <div id="game-container">
+        <div id="phase-bar">
+            <div class="phase-step active">Release</div>
+            <div class="phase-step">Play</div>
+            <div class="phase-step">Rate</div>
+            <div class="phase-step">Breed</div>
+            <div class="phase-step">Observe</div>
+        </div>
+
         <div id="info">
             <div>Level: <span id="level-num">1</span></div>
             <div>Moves: <span id="move-count">0</span></div>
@@ -275,42 +424,46 @@
                 <div class="spinner"></div>
                 <div style="margin-top: 12px;">Generating...</div>
             </div>
+
+            <!-- Release overlay -->
+            <div id="release-overlay" class="game-overlay">
+                <div class="overlay-inner">
+                    <canvas id="release-bot-sprite" width="100" height="100" style="border-radius: 50%; background: #1a1a1a; margin: 0 auto; display: block;"></canvas>
+                    <div id="release-bot-name">-</div>
+                    <div id="release-bot-personality">-</div>
+                    <p>presents a puzzle...</p>
+                    <button onclick="game.startPuzzle()">Start Puzzle</button>
+                </div>
+            </div>
+
+            <!-- Observe overlay -->
+            <div id="observe-overlay" class="game-overlay">
+                <div class="overlay-inner">
+                    <h2>Generation <span id="observe-generation">0</span></h2>
+                    <p>The population has evolved.</p>
+                    <div id="observe-stats"></div>
+                    <button onclick="game.startNextCycle()">Continue</button>
+                </div>
+            </div>
         </div>
 
         <div id="win-message"></div>
 
         <div id="touch-controls">
             <div class="dpad">
-                <div class="dpad-btn dpad-up" ontouchstart="game.handleTouch(0, -1)" ontouchend="event.preventDefault()">⬆</div>
-                <div class="dpad-btn dpad-left" ontouchstart="game.handleTouch(-1, 0)" ontouchend="event.preventDefault()">⬅</div>
+                <div class="dpad-btn dpad-up" ontouchstart="game.handleTouch(0, -1)" ontouchend="event.preventDefault()">&#x2B06;</div>
+                <div class="dpad-btn dpad-left" ontouchstart="game.handleTouch(-1, 0)" ontouchend="event.preventDefault()">&#x2B05;</div>
                 <div class="dpad-center"></div>
-                <div class="dpad-btn dpad-right" ontouchstart="game.handleTouch(1, 0)" ontouchend="event.preventDefault()">➡</div>
-                <div class="dpad-btn dpad-down" ontouchstart="game.handleTouch(0, 1)" ontouchend="event.preventDefault()">⬇</div>
+                <div class="dpad-btn dpad-right" ontouchstart="game.handleTouch(1, 0)" ontouchend="event.preventDefault()">&#x27A1;</div>
+                <div class="dpad-btn dpad-down" ontouchstart="game.handleTouch(0, 1)" ontouchend="event.preventDefault()">&#x2B07;</div>
             </div>
         </div>
 
-        <div id="controls">
-            <button onclick="game.undo()">↶ Undo</button>
-            <button onclick="game.reset()">⟲ Reset</button>
-            <button onclick="game.generateLevel()" style="background: #4a5a3a; border-color: #6a8a5a;">🎲 Generate</button>
+        <div id="play-controls">
+            <button onclick="game.undo()">&#x21B6; Undo</button>
+            <button onclick="game.reset()">&#x27F2; Reset</button>
+            <button onclick="game.giveUp()" style="background: #5a3a3a; border-color: #7a5a5a;">Give Up</button>
         </div>
-
-        <div id="experiment-controls" style="margin-top: 15px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
-            <div style="margin-bottom: 10px; color: #888; font-size: 0.85em;">Experiment Tools</div>
-            <button onclick="game.toggleHistoryView()" style="background: #3a4a5a; border-color: #5a6a7a;">📊 View History</button>
-            <button onclick="game.exportHistory()" style="background: #3a5a4a; border-color: #5a7a6a;">💾 Export Data</button>
-            <button onclick="game.saveExperiment()" style="background: #4a3a5a; border-color: #6a5a7a;">💾 Save Experiment</button>
-            <button onclick="document.getElementById('load-file').click()" style="background: #3a5a5a; border-color: #5a7a7a;">📂 Load Experiment</button>
-            <button onclick="game.clearState()" style="background: #5a3a3a; border-color: #7a5a5a;">🗑️ Clear & Restart</button>
-            <input type="file" id="load-file" accept=".json" style="display: none;" onchange="game.loadExperiment(event)">
-        </div>
-
-        <div id="history-view" style="display: none; margin-top: 15px; padding: 15px; background: #1a1a1a; border-radius: 6px; max-height: 300px; overflow-y: auto;">
-            <h3 style="margin: 0 0 10px 0; font-size: 1em; color: #aaa;">Generation History</h3>
-            <div id="history-content"></div>
-        </div>
-
-        <div id="win-message"></div>
 
         <div id="rating-panel">
             <div id="bot-presentation" style="text-align: center; margin-bottom: 15px;">
@@ -323,27 +476,37 @@
                 <p style="margin: 10px 0 5px 0; color: #666; font-size: 0.9em;">Rate this puzzle:</p>
             </div>
             <div class="rating-stars">
-                <button class="star-btn" onclick="game.rateCurrentLevel(1)">★</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(2)">★</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(3)">★</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(4)">★</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(5)">★</button>
+                <button class="star-btn" onclick="game.rateCurrentLevel(1)">&#x2605;</button>
+                <button class="star-btn" onclick="game.rateCurrentLevel(2)">&#x2605;</button>
+                <button class="star-btn" onclick="game.rateCurrentLevel(3)">&#x2605;</button>
+                <button class="star-btn" onclick="game.rateCurrentLevel(4)">&#x2605;</button>
+                <button class="star-btn" onclick="game.rateCurrentLevel(5)">&#x2605;</button>
             </div>
             <div id="generation-display">Generation: 0 | Rated: 0</div>
-            <div id="population-stats" style="margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.8em; color: #888; text-align: center; display: none;">
-                Population Avg: Grid: - | Boxes: - | Complexity: - | Density: -
-            </div>
-            <div id="curation-stats" style="margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 0.75em; color: #666; text-align: center; display: none;">
-                Curation: - selections | Avg affinity: -
-            </div>
             <div style="text-align: center;">
-                <button id="breed-btn" onclick="game.breedNextGeneration()">🧬 Breed Next Generation</button>
+                <button id="next-puzzle-btn" onclick="game.startRelease()">Next Puzzle &#x2192;</button>
+                <button id="breed-btn" onclick="game.triggerBreed()">&#x1F9EC; Breed Next Generation</button>
             </div>
+        </div>
+
+        <div id="experiment-controls" style="margin-top: 15px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
+            <div style="margin-bottom: 10px; color: #888; font-size: 0.85em;">Experiment Tools</div>
+            <button onclick="game.toggleHistoryView()" style="background: #3a4a5a; border-color: #5a6a7a;">&#x1F4CA; View History</button>
+            <button onclick="game.exportHistory()" style="background: #3a5a4a; border-color: #5a7a6a;">&#x1F4BE; Export Data</button>
+            <button onclick="game.saveExperiment()" style="background: #4a3a5a; border-color: #6a5a7a;">&#x1F4BE; Save Experiment</button>
+            <button onclick="document.getElementById('load-file').click()" style="background: #3a5a5a; border-color: #5a7a7a;">&#x1F4C2; Load Experiment</button>
+            <button onclick="game.clearState()" style="background: #5a3a3a; border-color: #7a5a5a;">&#x1F5D1;&#xFE0F; Clear &amp; Restart</button>
+            <input type="file" id="load-file" accept=".json" style="display: none;" onchange="game.loadExperiment(event)">
+        </div>
+
+        <div id="history-view" style="display: none; margin-top: 15px; padding: 15px; background: #1a1a1a; border-radius: 6px; max-height: 300px; overflow-y: auto;">
+            <h3 style="margin: 0 0 10px 0; font-size: 1em; color: #aaa;">Generation History</h3>
+            <div id="history-content"></div>
         </div>
     </div>
 
     <div class="instructions">
-        Use Arrow Keys, WASD, or touch controls • Push all boxes onto targets to win
+        Use Arrow Keys, WASD, or touch controls &bull; Push all boxes onto targets to win
     </div>
 
     <script type="module" src="client/main.js"></script>
