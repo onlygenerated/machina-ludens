@@ -1,14 +1,12 @@
 import { TILES } from '../shared/tiles.js';
-import { Population, Bot } from '../shared/genome.js';
+import { Genome, Population, Bot } from '../shared/genome.js';
 import { LEVELS } from './levels.js';
 
 // Game constants
 const MAX_CANVAS = 600;
 
 const PHASES = Object.freeze({
-    RELEASE: 'RELEASE',
-    PLAY: 'PLAY',
-    RATE: 'RATE',
+    CHOOSE: 'CHOOSE',
     BREED: 'BREED',
     OBSERVE: 'OBSERVE'
 });
@@ -74,24 +72,21 @@ export function resolveVisualTheme(genome) {
     const dec = g.decoration;
 
     const colors = {
-        // Environment colors vary with genome palette
         FLOOR:                hslStr(hue, 15, 12),
         WALL:                 hslStr((hue + 30) % 360, 45, 35),
         WALL_LIGHT:           hslStr((hue + 30) % 360, 45, 45),
         WALL_DARK:            hslStr((hue + 30) % 360, 45, 23),
-        // Game piece colors are fixed for consistency across phenotypes
-        TARGET:               'hsl(230, 40%, 20%)',    // dark indigo pit
-        TARGET_HIGHLIGHT:     'hsl(230, 35%, 30%)',    // pit edge highlight
-        BOX:                  'hsl(32, 40%, 62%)',     // warm tan/sandstone rock
-        BOX_SHADOW:           'hsl(32, 30%, 40%)',     // rock shadow
-        CHECK:                'hsl(145, 65%, 30%)',    // dark green check mark
-        CHECK_SHADOW:         'hsl(145, 40%, 15%)',    // check shadow
-        PLAYER:               'hsl(14, 80%, 58%)'     // coral/orange accent
+        TARGET:               'hsl(230, 40%, 20%)',
+        TARGET_HIGHLIGHT:     'hsl(230, 35%, 30%)',
+        BOX:                  'hsl(32, 40%, 62%)',
+        BOX_SHADOW:           'hsl(32, 30%, 40%)',
+        CHECK:                'hsl(145, 65%, 30%)',
+        CHECK_SHADOW:         'hsl(145, 40%, 15%)',
+        PLAYER:               'hsl(14, 80%, 58%)'
     };
 
     return {
         colors,
-        // cornerRadius is per-tile; multiplied by tileSize at render time
         cornerRadiusFactor: ts * 0.4,
         borderScale: (1 - ts) * 0.12 + 0.02,
         boxInset: 0.08 + ts * 0.12,
@@ -103,8 +98,191 @@ export function resolveVisualTheme(genome) {
         wallTextureAlpha: Math.max(0, (dec - 0.25)) * 0.25,
         wallHighlight: dec > 0.5,
         boxCross: dec > 0.4,
-        targetRings: Math.floor(dec * 3)  // 0, 1, or 2
+        targetRings: Math.floor(dec * 3)
     };
+}
+
+// --- Standalone grid renderer ---
+
+function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, maxSize) {
+    const tileSize = Math.max(4, Math.floor(maxSize / Math.max(gridWidth, gridHeight)));
+    const canvasW = gridWidth * tileSize;
+    const canvasH = gridHeight * tileSize;
+
+    ctx.canvas.width = canvasW;
+    ctx.canvas.height = canvasH;
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    const C = theme.colors;
+    const cr = (theme.cornerRadiusFactor || 0) * tileSize;
+    const pad = Math.max(1, tileSize * theme.borderScale);
+
+    for (let y = 0; y < gridHeight; y++) {
+        for (let x = 0; x < gridWidth; x++) {
+            const tile = grid[y * gridWidth + x];
+            const px = x * tileSize;
+            const py = y * tileSize;
+
+            // Floor background
+            ctx.fillStyle = C.FLOOR;
+            ctx.fillRect(px, py, tileSize, tileSize);
+
+            // Floor pattern overlay
+            if (theme.floorPattern !== 'none' && theme.floorPatternAlpha > 0 && tile !== TILES.WALL) {
+                ctx.save();
+                ctx.globalAlpha = theme.floorPatternAlpha;
+                ctx.strokeStyle = C.WALL;
+                ctx.lineWidth = 1;
+                const cx = px + tileSize / 2;
+                const cy = py + tileSize / 2;
+                if (theme.floorPattern === 'dots') {
+                    ctx.fillStyle = C.WALL;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, tileSize * 0.04, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (theme.floorPattern === 'grid_lines') {
+                    ctx.beginPath();
+                    ctx.moveTo(px, py + tileSize);
+                    ctx.lineTo(px + tileSize, py + tileSize);
+                    ctx.moveTo(px + tileSize, py);
+                    ctx.lineTo(px + tileSize, py + tileSize);
+                    ctx.stroke();
+                } else if (theme.floorPattern === 'crosshatch') {
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(px + tileSize, py + tileSize);
+                    ctx.moveTo(px + tileSize, py);
+                    ctx.lineTo(px, py + tileSize);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            if (tile === TILES.WALL) {
+                ctx.fillStyle = C.WALL_LIGHT;
+                fillRoundedRect(ctx, px, py, tileSize, tileSize, cr);
+                ctx.fillStyle = C.WALL;
+                fillRoundedRect(ctx, px + pad, py + pad, tileSize - pad, tileSize - pad, cr * 0.8);
+                ctx.fillStyle = C.WALL_DARK;
+                ctx.fillRect(px + pad, py + tileSize - pad, tileSize - pad, pad);
+                ctx.fillRect(px + tileSize - pad, py + pad, pad, tileSize - pad);
+
+                if (theme.wallTexture !== 'flat' && theme.wallTextureAlpha > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = theme.wallTextureAlpha;
+                    ctx.strokeStyle = C.WALL_DARK;
+                    ctx.lineWidth = 1;
+                    if (theme.wallTexture === 'lines') {
+                        for (let i = 0.25; i < 1; i += 0.25) {
+                            ctx.beginPath();
+                            ctx.moveTo(px + pad, py + tileSize * i);
+                            ctx.lineTo(px + tileSize - pad, py + tileSize * i);
+                            ctx.stroke();
+                        }
+                    } else if (theme.wallTexture === 'brick') {
+                        const bh = tileSize / 3;
+                        for (let row = 0; row < 3; row++) {
+                            const by = py + row * bh;
+                            ctx.beginPath();
+                            ctx.moveTo(px + pad, by + bh);
+                            ctx.lineTo(px + tileSize - pad, by + bh);
+                            ctx.stroke();
+                            const offset = row % 2 === 0 ? 0 : tileSize / 2;
+                            ctx.beginPath();
+                            ctx.moveTo(px + offset + tileSize / 2, by);
+                            ctx.lineTo(px + offset + tileSize / 2, by + bh);
+                            ctx.stroke();
+                        }
+                    }
+                    ctx.restore();
+                }
+
+                if (theme.wallHighlight) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.15;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(px + pad, py + pad, (tileSize - pad * 2) * 0.4, pad * 2);
+                    ctx.fillRect(px + pad, py + pad, pad * 2, (tileSize - pad * 2) * 0.4);
+                    ctx.restore();
+                }
+            } else if (tile === TILES.TARGET) {
+                const pitInset = tileSize * 0.08;
+                const pitSize = tileSize - pitInset * 2;
+                const pitR = pitSize * 0.4;
+                const so = Math.max(2, tileSize * 0.06);
+                ctx.fillStyle = C.TARGET_HIGHLIGHT;
+                fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
+                ctx.fillStyle = C.TARGET;
+                fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
+            } else if (tile === TILES.BOX || tile === TILES.BOX_ON_TARGET) {
+                const isOnTarget = tile === TILES.BOX_ON_TARGET;
+                const cx = px + tileSize / 2;
+                const cy = py + tileSize / 2;
+                const half = tileSize * 0.5;
+                const so = Math.max(2, tileSize * 0.06);
+
+                if (isOnTarget) {
+                    const pitInset = tileSize * 0.08;
+                    const pitSize = tileSize - pitInset * 2;
+                    const pitR = pitSize * 0.4;
+                    ctx.fillStyle = C.TARGET_HIGHLIGHT;
+                    fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
+                    ctx.fillStyle = C.TARGET;
+                    fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
+                }
+
+                const dHalf = isOnTarget ? half * 0.82 : half;
+                function drawDiamond(ox, oy) {
+                    ctx.beginPath();
+                    ctx.moveTo(ox, oy - dHalf);
+                    ctx.lineTo(ox + dHalf, oy);
+                    ctx.lineTo(ox, oy + dHalf);
+                    ctx.lineTo(ox - dHalf, oy);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                ctx.fillStyle = C.BOX_SHADOW;
+                drawDiamond(cx + so, cy + so);
+                ctx.fillStyle = C.BOX;
+                drawDiamond(cx, cy);
+
+                if (isOnTarget) {
+                    const lw = Math.max(3, tileSize * 0.12);
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.lineWidth = lw;
+                    const cUp = 4;
+                    ctx.strokeStyle = C.CHECK_SHADOW;
+                    ctx.beginPath();
+                    ctx.moveTo(cx - tileSize * 0.28 + 2, cy - cUp + 2);
+                    ctx.lineTo(cx - tileSize * 0.06 + 2, cy + tileSize * 0.28 - cUp + 2);
+                    ctx.lineTo(cx + tileSize * 0.38 + 2, cy - tileSize * 0.30 - cUp + 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = C.CHECK;
+                    ctx.beginPath();
+                    ctx.moveTo(cx - tileSize * 0.28, cy - cUp);
+                    ctx.lineTo(cx - tileSize * 0.06, cy + tileSize * 0.28 - cUp);
+                    ctx.lineTo(cx + tileSize * 0.38, cy - tileSize * 0.30 - cUp);
+                    ctx.stroke();
+                }
+            }
+        }
+    }
+
+    // Draw player
+    const pcx = playerX * tileSize + tileSize / 2;
+    const pcy = playerY * tileSize + tileSize / 2;
+    const pr = tileSize * 0.35;
+    ctx.fillStyle = C.PLAYER;
+
+    if (theme.playerShape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        fillRoundedRect(ctx, pcx - pr, pcy - pr, pr * 2, pr * 2, pr * 0.4);
+    }
 }
 
 // Game state
@@ -119,29 +297,33 @@ export class Game {
         this.won = false;
 
         // Phase state
-        this.phase = PHASES.RELEASE;
+        this.phase = PHASES.CHOOSE;
 
-        // Breeding mode state
-        this.population = new Population(5); // Start with initial population
-        this.currentBot = null; // Currently playing bot
-        this.curatorBot = null; // Bot who curated/selected this level
-        this.ratedBots = []; // Track rated bots with their scores
-        this.currentLevelRating = 0;
-        this.generationHistory = []; // Track stats over generations
-        this.curationStats = []; // Track curator choices
+        // Population
+        this.population = new Population(5);
+        this.generationHistory = [];
+        this.lastBreedingReport = null;
 
-        // Start fresh every page load (no persisted population)
-        // this.loadState();
+        // Tournament state
+        this.tournamentRound = 0;
+        this.roundWinners = [];
+        this.roundSlots = [];
+        this.activeLevelIdx = null;  // null=comparison, 0/1/2=playing
+        this.tournamentPool = [];    // 15 slot objects
 
         this.setupControls();
         this.setupTouchGestures();
 
         // Start the phase loop
-        this.startRelease();
+        this.startTournament();
+    }
+
+    get isPlaying() {
+        return this.activeLevelIdx !== null;
     }
 
     handleTouch(dx, dy) {
-        if (this.phase !== PHASES.PLAY) return;
+        if (!this.isPlaying) return;
         this.move(dx, dy);
     }
 
@@ -158,7 +340,7 @@ export class Game {
         }, { passive: false });
 
         this.canvas.addEventListener('touchend', (e) => {
-            if (this.phase !== PHASES.PLAY) return;
+            if (!this.isPlaying) return;
 
             const touch = e.changedTouches[0];
             const deltaX = touch.clientX - touchStartX;
@@ -167,9 +349,7 @@ export class Game {
             const absX = Math.abs(deltaX);
             const absY = Math.abs(deltaY);
 
-            if (absX < minSwipeDistance && absY < minSwipeDistance) {
-                return;
-            }
+            if (absX < minSwipeDistance && absY < minSwipeDistance) return;
 
             if (absX > absY) {
                 this.move(deltaX > 0 ? 1 : -1, 0);
@@ -181,44 +361,12 @@ export class Game {
         }, { passive: false });
     }
 
-    loadLevel(levelNum) {
-        if (levelNum >= LEVELS.length) {
-            this.showWin("All levels complete!");
-            return;
-        }
-
-        this.currentLevel = levelNum;
-        this.currentTheme = null; // Tutorial levels use DEFAULT_THEME
-        const level = LEVELS[levelNum];
-        this.width = level.width;
-        this.height = level.height;
-        this.grid = [...level.grid];
-        this.moves = 0;
-        this.pushes = 0;
-        this.history = [];
-        this.won = false;
-
-        // Find player position
-        const playerIdx = this.grid.indexOf(TILES.PLAYER);
-        this.playerX = playerIdx % this.width;
-        this.playerY = Math.floor(playerIdx / this.width);
-
-        // Update canvas size
-        const ts = getTileSize(this.width, this.height);
-        this.canvas.width = this.width * ts;
-        this.canvas.height = this.height * ts;
-
-        this.updateUI();
-        this.render();
-    }
-
     reset() {
-        // If it's a generated level, reset to saved state
-        if (this.currentLevel === -1 && this.generatedLevelData) {
+        if (this.activeLevelIdx !== null && this.generatedLevelData) {
             const level = this.generatedLevelData;
             this.width = level.width;
             this.height = level.height;
-            this.grid = [...level.grid]; // Copy the grid
+            this.grid = [...level.grid];
             this.playerX = level.playerX;
             this.playerY = level.playerY;
             this.moves = 0;
@@ -226,98 +374,14 @@ export class Game {
             this.history = [];
             this.won = false;
 
-            const ts = getTileSize(this.width, this.height);
-            this.canvas.width = this.width * ts;
-            this.canvas.height = this.height * ts;
-
             this.updateUI();
             this.render();
-        } else {
-            // Regular level from LEVELS array
-            this.loadLevel(this.currentLevel);
         }
-    }
-
-    nextLevel() {
-        this.loadLevel(this.currentLevel + 1);
-    }
-
-    generateLevel() {
-        // Show loading overlay, then defer heavy work so the browser can paint
-        const overlay = document.getElementById('loading-overlay');
-        overlay.classList.add('visible');
-
-        setTimeout(() => {
-            this._doGenerateLevel();
-            overlay.classList.remove('visible');
-        }, 20);
-    }
-
-    _doGenerateLevel() {
-        const genomes = this.population.getCurrentGeneration();
-
-        // Pick a random bot to be the curator
-        const curatorGenome = genomes[Math.floor(Math.random() * genomes.length)];
-        this.curatorBot = new Bot(curatorGenome);
-
-        // Curator evaluates all genomes and picks their favorite
-        const curationResult = this.curatorBot.curate(genomes);
-        const chosenGenome = curationResult.genome;
-        const affinity = curationResult.affinity;
-
-        // Create bot for the chosen genome
-        this.currentBot = new Bot(chosenGenome);
-
-        // Resolve visual theme from the chosen genome
-        this.currentTheme = resolveVisualTheme(chosenGenome);
-
-        // Track curation decision
-        this.curationStats.push({
-            curator: this.curatorBot.name,
-            creator: this.currentBot.name,
-            affinity: affinity,
-            generation: this.population.generation
-        });
-
-        // Generate level from chosen genome
-        const generatedLevel = this.currentBot.generateLevel();
-
-        // Save the generated level data for reset functionality
-        this.generatedLevelData = {
-            width: generatedLevel.width,
-            height: generatedLevel.height,
-            grid: [...generatedLevel.grid], // Copy the grid
-            playerX: generatedLevel.playerX,
-            playerY: generatedLevel.playerY
-        };
-
-        // Load it as a custom level
-        this.currentLevel = -1; // Mark as generated
-        this.width = generatedLevel.width;
-        this.height = generatedLevel.height;
-        this.grid = generatedLevel.grid;
-        this.playerX = generatedLevel.playerX;
-        this.playerY = generatedLevel.playerY;
-        this.moves = 0;
-        this.pushes = 0;
-        this.history = [];
-        this.won = false;
-        this.currentLevelRating = 0;
-
-        // Update canvas size
-        const ts = getTileSize(this.width, this.height);
-        this.canvas.width = this.width * ts;
-        this.canvas.height = this.height * ts;
-
-        this.updateUI();
-        this.render();
-        this.updateRatingDisplay();
-        this.updateBotDisplay();
     }
 
     setupControls() {
         document.addEventListener('keydown', (e) => {
-            if (this.phase !== PHASES.PLAY) return;
+            if (!this.isPlaying) return;
 
             const key = e.key.toLowerCase();
 
@@ -348,53 +412,46 @@ export class Game {
     }
 
     move(dx, dy) {
+        if (this.won) return;
+
         const newX = this.playerX + dx;
         const newY = this.playerY + dy;
 
         if (!this.isValid(newX, newY)) return;
 
         const targetTile = this.getTile(newX, newY);
-
-        // Hit a wall
         if (targetTile === TILES.WALL) return;
 
-        // Save state for undo
         this.saveState();
 
-        // Check if pushing a box
         if (targetTile === TILES.BOX || targetTile === TILES.BOX_ON_TARGET) {
             const boxNewX = newX + dx;
             const boxNewY = newY + dy;
 
             if (!this.isValid(boxNewX, boxNewY)) {
-                this.history.pop(); // Undo the save
+                this.history.pop();
                 return;
             }
 
             const boxTargetTile = this.getTile(boxNewX, boxNewY);
 
-            // Can't push into wall or another box
             if (boxTargetTile === TILES.WALL ||
                 boxTargetTile === TILES.BOX ||
                 boxTargetTile === TILES.BOX_ON_TARGET) {
-                this.history.pop(); // Undo the save
+                this.history.pop();
                 return;
             }
 
-            // Move the box
             const isOnTarget = boxTargetTile === TILES.TARGET;
             this.setTile(boxNewX, boxNewY, isOnTarget ? TILES.BOX_ON_TARGET : TILES.BOX);
             this.pushes++;
         }
 
-        // Clear old player position (restore target if needed)
         const wasOnTarget = this.getTile(this.playerX, this.playerY) === TILES.TARGET;
         this.setTile(this.playerX, this.playerY, wasOnTarget ? TILES.TARGET : TILES.FLOOR);
 
-        // Clear box from new player position if present
         const movingToTarget = targetTile === TILES.TARGET || targetTile === TILES.BOX_ON_TARGET;
 
-        // Move player
         this.playerX = newX;
         this.playerY = newY;
         this.setTile(newX, newY, movingToTarget ? TILES.TARGET : TILES.FLOOR);
@@ -409,17 +466,16 @@ export class Game {
         if (this.history.length === 0) return;
 
         const state = this.history.pop();
-        this.grid = [...state.grid]; // Make sure to copy the array
+        this.grid = [...state.grid];
         this.playerX = state.playerX;
         this.playerY = state.playerY;
         this.moves = state.moves;
         this.pushes = state.pushes;
-        this.won = false; // Reset win state when undoing
+        this.won = false;
 
         this.updateUI();
         this.render();
 
-        // Clear win message
         document.getElementById('win-message').textContent = '';
     }
 
@@ -446,14 +502,16 @@ export class Game {
     }
 
     checkWin() {
-        // Check if all boxes are on targets
         const hasLooseBox = this.grid.some(tile => tile === TILES.BOX);
 
         if (!hasLooseBox) {
             this.won = true;
-            this.showWin("Level Complete!");
-            // Auto-transition to RATE after a brief delay
-            setTimeout(() => this.enterRatePhase(), 1200);
+            document.getElementById('win-message').textContent = 'Level Complete!';
+
+            // Mark slot as completed
+            if (this.activeLevelIdx !== null) {
+                this.roundSlots[this.activeLevelIdx].completed = true;
+            }
         }
     }
 
@@ -462,207 +520,14 @@ export class Game {
     }
 
     updateUI() {
-        const levelText = this.currentLevel === -1 ? 'Generated' : this.currentLevel + 1;
-        document.getElementById('level-num').textContent = levelText;
         document.getElementById('move-count').textContent = this.moves;
         document.getElementById('push-count').textContent = this.pushes;
         document.getElementById('win-message').textContent = '';
     }
 
     render() {
-        const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
         const theme = this.currentTheme || DEFAULT_THEME;
-        const C = theme.colors;
-        const ts = getTileSize(this.width, this.height);
-        const cr = (theme.cornerRadiusFactor || 0) * ts;
-        const pad = Math.max(1, ts * theme.borderScale);
-
-        // Draw grid
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const tile = this.getTile(x, y);
-                const px = x * ts;
-                const py = y * ts;
-
-                // Floor background for every tile
-                ctx.fillStyle = C.FLOOR;
-                ctx.fillRect(px, py, ts, ts);
-
-                // Floor pattern overlay
-                if (theme.floorPattern !== 'none' && theme.floorPatternAlpha > 0 && tile !== TILES.WALL) {
-                    ctx.save();
-                    ctx.globalAlpha = theme.floorPatternAlpha;
-                    ctx.strokeStyle = C.WALL;
-                    ctx.lineWidth = 1;
-                    const cx = px + ts / 2;
-                    const cy = py + ts / 2;
-                    if (theme.floorPattern === 'dots') {
-                        ctx.fillStyle = C.WALL;
-                        ctx.beginPath();
-                        ctx.arc(cx, cy, ts * 0.04, 0, Math.PI * 2);
-                        ctx.fill();
-                    } else if (theme.floorPattern === 'grid_lines') {
-                        ctx.beginPath();
-                        ctx.moveTo(px, py + ts);
-                        ctx.lineTo(px + ts, py + ts);
-                        ctx.moveTo(px + ts, py);
-                        ctx.lineTo(px + ts, py + ts);
-                        ctx.stroke();
-                    } else if (theme.floorPattern === 'crosshatch') {
-                        ctx.beginPath();
-                        ctx.moveTo(px, py);
-                        ctx.lineTo(px + ts, py + ts);
-                        ctx.moveTo(px + ts, py);
-                        ctx.lineTo(px, py + ts);
-                        ctx.stroke();
-                    }
-                    ctx.restore();
-                }
-
-                if (tile === TILES.WALL) {
-                    // 3D-style wall with optional rounding
-                    ctx.fillStyle = C.WALL_LIGHT;
-                    fillRoundedRect(ctx, px, py, ts, ts, cr);
-                    ctx.fillStyle = C.WALL;
-                    fillRoundedRect(ctx, px + pad, py + pad, ts - pad, ts - pad, cr * 0.8);
-                    ctx.fillStyle = C.WALL_DARK;
-                    ctx.fillRect(px + pad, py + ts - pad, ts - pad, pad);
-                    ctx.fillRect(px + ts - pad, py + pad, pad, ts - pad);
-
-                    // Wall texture overlay
-                    if (theme.wallTexture !== 'flat' && theme.wallTextureAlpha > 0) {
-                        ctx.save();
-                        ctx.globalAlpha = theme.wallTextureAlpha;
-                        ctx.strokeStyle = C.WALL_DARK;
-                        ctx.lineWidth = 1;
-                        if (theme.wallTexture === 'lines') {
-                            for (let i = 0.25; i < 1; i += 0.25) {
-                                ctx.beginPath();
-                                ctx.moveTo(px + pad, py + ts * i);
-                                ctx.lineTo(px + ts - pad, py + ts * i);
-                                ctx.stroke();
-                            }
-                        } else if (theme.wallTexture === 'brick') {
-                            const bh = ts / 3;
-                            for (let row = 0; row < 3; row++) {
-                                const by = py + row * bh;
-                                ctx.beginPath();
-                                ctx.moveTo(px + pad, by + bh);
-                                ctx.lineTo(px + ts - pad, by + bh);
-                                ctx.stroke();
-                                const offset = row % 2 === 0 ? 0 : ts / 2;
-                                ctx.beginPath();
-                                ctx.moveTo(px + offset + ts / 2, by);
-                                ctx.lineTo(px + offset + ts / 2, by + bh);
-                                ctx.stroke();
-                            }
-                        }
-                        ctx.restore();
-                    }
-
-                    // Wall highlight (top-left shine)
-                    if (theme.wallHighlight) {
-                        ctx.save();
-                        ctx.globalAlpha = 0.15;
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(px + pad, py + pad, (ts - pad * 2) * 0.4, pad * 2);
-                        ctx.fillRect(px + pad, py + pad, pad * 2, (ts - pad * 2) * 0.4);
-                        ctx.restore();
-                    }
-                } else if (tile === TILES.TARGET) {
-                    // Empty pit: dark indigo rounded square
-                    const pitInset = ts * 0.08;
-                    const pitSize = ts - pitInset * 2;
-                    const pitR = pitSize * 0.4;
-                    const so = Math.max(2, ts * 0.06); // shadow offset scales with tile
-                    // Edge highlight
-                    ctx.fillStyle = C.TARGET_HIGHLIGHT;
-                    fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
-                    // Pit surface
-                    ctx.fillStyle = C.TARGET;
-                    fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
-                } else if (tile === TILES.BOX || tile === TILES.BOX_ON_TARGET) {
-                    const isOnTarget = tile === TILES.BOX_ON_TARGET;
-                    const cx = px + ts / 2;
-                    const cy = py + ts / 2;
-                    const half = ts * 0.5;  // points touch tile edges
-                    const so = Math.max(2, ts * 0.06);
-
-                    if (isOnTarget) {
-                        // Draw the pit underneath
-                        const pitInset = ts * 0.08;
-                        const pitSize = ts - pitInset * 2;
-                        const pitR = pitSize * 0.4;
-                        ctx.fillStyle = C.TARGET_HIGHLIGHT;
-                        fillRoundedRect(ctx, px + pitInset + so, py + pitInset + so, pitSize, pitSize, pitR);
-                        ctx.fillStyle = C.TARGET;
-                        fillRoundedRect(ctx, px + pitInset, py + pitInset, pitSize, pitSize, pitR);
-                    }
-
-                    // Sharp diamond
-                    const dHalf = isOnTarget ? half * 0.82 : half;
-                    function drawDiamond(ox, oy) {
-                        ctx.beginPath();
-                        ctx.moveTo(ox, oy - dHalf);       // top
-                        ctx.lineTo(ox + dHalf, oy);       // right
-                        ctx.lineTo(ox, oy + dHalf);       // bottom
-                        ctx.lineTo(ox - dHalf, oy);       // left
-                        ctx.closePath();
-                        ctx.fill();
-                    }
-
-                    // Rock shadow
-                    ctx.fillStyle = C.BOX_SHADOW;
-                    drawDiamond(cx + so, cy + so);
-
-                    // Rock surface
-                    ctx.fillStyle = C.BOX;
-                    drawDiamond(cx, cy);
-
-                    // Large green check mark on completed targets
-                    if (isOnTarget) {
-                        const lw = Math.max(3, ts * 0.12);
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
-                        ctx.lineWidth = lw;
-                        // Check mark shifted up 4px
-                        const cUp = 4;
-                        // Shadow first (offset down-right)
-                        ctx.strokeStyle = C.CHECK_SHADOW;
-                        ctx.beginPath();
-                        ctx.moveTo(cx - ts * 0.28 + 2, cy - cUp + 2);
-                        ctx.lineTo(cx - ts * 0.06 + 2, cy + ts * 0.28 - cUp + 2);
-                        ctx.lineTo(cx + ts * 0.38 + 2, cy - ts * 0.30 - cUp + 2);
-                        ctx.stroke();
-                        // Check mark
-                        ctx.strokeStyle = C.CHECK;
-                        ctx.beginPath();
-                        ctx.moveTo(cx - ts * 0.28, cy - cUp);
-                        ctx.lineTo(cx - ts * 0.06, cy + ts * 0.28 - cUp);
-                        ctx.lineTo(cx + ts * 0.38, cy - ts * 0.30 - cUp);
-                        ctx.stroke();
-                    }
-                }
-                // FLOOR: already drawn as background
-            }
-        }
-
-        // Draw player on top
-        const pcx = this.playerX * ts + ts / 2;
-        const pcy = this.playerY * ts + ts / 2;
-        const pr = ts * 0.35;
-        ctx.fillStyle = C.PLAYER;
-
-        if (theme.playerShape === 'circle') {
-            ctx.beginPath();
-            ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
-            ctx.fill();
-        } else {
-            // rounded_square
-            fillRoundedRect(ctx, pcx - pr, pcy - pr, pr * 2, pr * 2, pr * 0.4);
-        }
+        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS);
     }
 
     // === PHASE STATE MACHINE ===
@@ -677,7 +542,7 @@ export class Game {
 
         // Update phase bar highlights
         const steps = document.querySelectorAll('.phase-step');
-        const order = [PHASES.RELEASE, PHASES.PLAY, PHASES.RATE, PHASES.BREED, PHASES.OBSERVE];
+        const order = [PHASES.CHOOSE, PHASES.BREED, PHASES.OBSERVE];
         const currentIdx = order.indexOf(phase);
         steps.forEach((step, i) => {
             step.classList.remove('active', 'completed');
@@ -685,300 +550,371 @@ export class Game {
             else if (i < currentIdx) step.classList.add('completed');
         });
 
-        // Element visibility by phase
-        const info = document.getElementById('info');
-        const canvas = this.canvas;
-        const releaseOverlay = document.getElementById('release-overlay');
-        const observeOverlay = document.getElementById('observe-overlay');
+        // Element visibility
+        const comparisonView = document.getElementById('comparison-view');
+        const playView = document.getElementById('play-view');
+        const observeView = document.getElementById('observe-view');
         const touchControls = document.getElementById('touch-controls');
-        const playControls = document.getElementById('play-controls');
-        const ratingPanel = document.getElementById('rating-panel');
         const phaseBar = document.getElementById('phase-bar');
-        const winMessage = document.getElementById('win-message');
 
-        // Default: hide everything
-        info.style.display = 'none';
-        releaseOverlay.style.display = 'none';
-        observeOverlay.style.display = 'none';
-        playControls.style.display = 'none';
-        ratingPanel.style.display = 'none';
-        canvas.style.opacity = '1';
-        winMessage.textContent = '';
+        // Hide everything first
+        comparisonView.style.display = 'none';
+        playView.style.display = 'none';
+        observeView.style.display = 'none';
 
-        // Mobile touch controls: only show during PLAY
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
-        touchControls.style.display = (phase === PHASES.PLAY && isMobile) ? 'flex' : 'none';
+        touchControls.style.display = 'none';
 
-        // Phase bar always visible
         phaseBar.style.display = 'flex';
 
         switch (phase) {
-            case PHASES.RELEASE:
-                releaseOverlay.style.display = 'flex';
-                canvas.style.opacity = '0.3';
-                break;
-            case PHASES.PLAY:
-                info.style.display = 'flex';
-                playControls.style.display = 'block';
-                break;
-            case PHASES.RATE:
-                info.style.display = 'flex';
-                ratingPanel.style.display = 'block';
+            case PHASES.CHOOSE:
+                if (this.isPlaying) {
+                    playView.style.display = 'block';
+                    touchControls.style.display = (isMobile) ? 'flex' : 'none';
+                } else {
+                    comparisonView.style.display = 'block';
+                }
                 break;
             case PHASES.OBSERVE:
-                observeOverlay.style.display = 'flex';
-                canvas.style.opacity = '0.3';
+                observeView.style.display = 'block';
                 break;
         }
     }
 
-    startRelease() {
-        // Generate the level data (heavy work deferred)
-        const overlay = document.getElementById('loading-overlay');
-        overlay.classList.add('visible');
+    // === TOURNAMENT METHODS ===
 
-        setTimeout(() => {
-            this._doGenerateLevel();
-            overlay.classList.remove('visible');
-
-            // Populate release overlay with curator info
-            this._populateReleaseOverlay();
-            this.setPhase(PHASES.RELEASE);
-        }, 20);
+    startTournament() {
+        this.tournamentRound = 0;
+        this.roundWinners = [];
+        this.activeLevelIdx = null;
+        this._buildTournamentPool();
+        this._setupRound(0);
+        this.setPhase(PHASES.CHOOSE);
     }
 
-    _populateReleaseOverlay() {
-        if (!this.curatorBot) return;
+    _buildTournamentPool() {
+        const existingGenomes = [...this.population.getCurrentGeneration()]; // 5 genomes
 
-        const nameEl = document.getElementById('release-bot-name');
-        const personalityEl = document.getElementById('release-bot-personality');
-        const spriteCanvas = document.getElementById('release-bot-sprite');
+        // Create 5 newcomer genomes
+        const newcomers = [];
+        for (let i = 0; i < 5; i++) {
+            newcomers.push(new Genome());
+        }
 
-        nameEl.textContent = this.curatorBot.name;
-        nameEl.style.color = this.curatorBot.colors.primary;
+        // Build 15 slots: 5 rounds x 3 per round
+        // Each round: 1 newcomer + 2 existing
+        // Each existing genome appears exactly twice (10 existing slots for 5 genomes)
+        this.tournamentPool = [];
 
-        personalityEl.textContent = this.curatorBot.personality;
+        const existingSlots = [];
+        for (const g of existingGenomes) {
+            existingSlots.push(g);
+            existingSlots.push(g);
+        }
+        // Shuffle existing slots
+        for (let i = existingSlots.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [existingSlots[i], existingSlots[j]] = [existingSlots[j], existingSlots[i]];
+        }
 
-        const ctx = spriteCanvas.getContext('2d');
-        ctx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
-        this.curatorBot.drawSprite(ctx, 50, 50, 80);
+        for (let round = 0; round < 5; round++) {
+            const roundEntries = [];
+
+            // 1 newcomer
+            roundEntries.push({ genome: newcomers[round], isNewcomer: true });
+
+            // 2 existing
+            roundEntries.push({ genome: existingSlots[round * 2], isNewcomer: false });
+            roundEntries.push({ genome: existingSlots[round * 2 + 1], isNewcomer: false });
+
+            // Shuffle within round
+            for (let i = roundEntries.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [roundEntries[i], roundEntries[j]] = [roundEntries[j], roundEntries[i]];
+            }
+
+            for (const entry of roundEntries) {
+                this.tournamentPool.push({
+                    genome: entry.genome,
+                    isNewcomer: entry.isNewcomer,
+                    bot: null,
+                    theme: null,
+                    levelData: null,
+                    completed: false
+                });
+            }
+        }
     }
 
-    startPuzzle() {
-        this.setPhase(PHASES.PLAY);
+    _setupRound(roundIdx) {
+        this.tournamentRound = roundIdx;
+        this.activeLevelIdx = null;
+
+        const startIdx = roundIdx * 3;
+        this.roundSlots = this.tournamentPool.slice(startIdx, startIdx + 3);
+
+        // Generate levels for each slot
+        for (const slot of this.roundSlots) {
+            slot.bot = new Bot(slot.genome);
+            slot.theme = resolveVisualTheme(slot.genome);
+            slot.completed = false;
+
+            const level = slot.genome.generateLevel();
+            slot.levelData = {
+                width: level.width,
+                height: level.height,
+                grid: [...level.grid],
+                playerX: level.playerX,
+                playerY: level.playerY
+            };
+        }
+
+        this._renderComparisonView();
     }
 
-    enterRatePhase() {
-        this.currentLevelRating = 0;
-        this.updateRatingDisplay();
-        this.updateBotDisplay();
-        this.updateGenerationDisplay();
+    _renderComparisonView() {
+        // Update round counter
+        document.getElementById('round-counter').textContent = `Round ${this.tournamentRound + 1} of 5`;
 
-        // Hide action buttons until a rating is given
-        document.getElementById('next-puzzle-btn').style.display = 'none';
-        document.getElementById('breed-btn').classList.remove('visible');
+        const cardsContainer = document.getElementById('preview-cards');
+        // Clear existing cards
+        while (cardsContainer.firstChild) {
+            cardsContainer.removeChild(cardsContainer.firstChild);
+        }
 
-        this.setPhase(PHASES.RATE);
+        for (let i = 0; i < 3; i++) {
+            const slot = this.roundSlots[i];
+            const card = document.createElement('div');
+            card.className = 'preview-card';
+
+            // Preview canvas
+            const previewCanvas = document.createElement('canvas');
+            previewCanvas.width = 180;
+            previewCanvas.height = 180;
+            previewCanvas.style.cssText = 'display: block; background: #1a1a1a; border-radius: 4px; width: 100%;';
+            const previewCtx = previewCanvas.getContext('2d');
+            renderGrid(previewCtx, slot.levelData.width, slot.levelData.height,
+                slot.levelData.grid, slot.levelData.playerX, slot.levelData.playerY,
+                slot.theme, 180);
+            card.appendChild(previewCanvas);
+
+            // Bot name
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'preview-bot-name';
+            nameDiv.textContent = slot.bot.name;
+            nameDiv.style.color = slot.bot.colors.primary;
+            card.appendChild(nameDiv);
+
+            // Traits line
+            const genes = slot.genome.genes;
+            const dominantStyle = slot.genome.getDominantStyle();
+            const traitsDiv = document.createElement('div');
+            traitsDiv.className = 'preview-traits';
+            traitsDiv.textContent = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
+            card.appendChild(traitsDiv);
+
+            // NEW badge
+            if (slot.isNewcomer) {
+                const badge = document.createElement('span');
+                badge.className = 'newcomer-badge';
+                badge.textContent = 'NEW';
+                card.appendChild(badge);
+            }
+
+            // Completed check (hidden initially)
+            const checkDiv = document.createElement('div');
+            checkDiv.className = 'preview-completed';
+            checkDiv.id = `preview-check-${i}`;
+            checkDiv.textContent = '\u2714 Solved';
+            checkDiv.style.display = 'none';
+            card.appendChild(checkDiv);
+
+            // Button row
+            const btnRow = document.createElement('div');
+            btnRow.className = 'preview-btn-row';
+
+            const playBtn = document.createElement('button');
+            playBtn.className = 'preview-play-btn';
+            playBtn.textContent = 'Play';
+            const playIdx = i;
+            playBtn.onclick = () => this.expandLevel(playIdx);
+            btnRow.appendChild(playBtn);
+
+            const chooseBtn = document.createElement('button');
+            chooseBtn.className = 'preview-choose-btn';
+            chooseBtn.textContent = 'Choose';
+            const chooseIdx = i;
+            chooseBtn.onclick = () => this.chooseWinner(chooseIdx);
+            btnRow.appendChild(chooseBtn);
+
+            card.appendChild(btnRow);
+
+            cardsContainer.appendChild(card);
+        }
+
+        this.updatePhaseUI();
     }
 
-    giveUp() {
-        this.enterRatePhase();
+    expandLevel(idx) {
+        this.activeLevelIdx = idx;
+        const slot = this.roundSlots[idx];
+
+        // Load level into game state (always fresh)
+        this.currentLevel = -1;
+        this.currentTheme = slot.theme;
+        this.width = slot.levelData.width;
+        this.height = slot.levelData.height;
+        this.grid = [...slot.levelData.grid];
+        this.playerX = slot.levelData.playerX;
+        this.playerY = slot.levelData.playerY;
+        this.moves = 0;
+        this.pushes = 0;
+        this.history = [];
+        this.won = false;
+
+        // Save for reset
+        this.generatedLevelData = {
+            width: slot.levelData.width,
+            height: slot.levelData.height,
+            grid: [...slot.levelData.grid],
+            playerX: slot.levelData.playerX,
+            playerY: slot.levelData.playerY
+        };
+
+        // Update play view bot info
+        document.getElementById('play-bot-name').textContent = slot.bot.name;
+        document.getElementById('play-bot-name').style.color = slot.bot.colors.primary;
+
+        this.updateUI();
+        this.render();
+        this.updatePhaseUI();
     }
 
-    triggerBreed() {
-        if (this.ratedBots.length < 3) return;
+    backToComparison() {
+        // Update the completed check if this level was solved
+        if (this.activeLevelIdx !== null) {
+            const slot = this.roundSlots[this.activeLevelIdx];
+            if (slot.completed) {
+                const checkEl = document.getElementById(`preview-check-${this.activeLevelIdx}`);
+                if (checkEl) checkEl.style.display = 'block';
+            }
+        }
 
-        // Build fitness array
-        const avgRating = this.ratedBots.reduce((sum, r) => sum + r.rating, 0) / this.ratedBots.length;
-        const genomes = this.population.getCurrentGeneration();
-        const fitnessScores = genomes.map(genome => {
-            const rated = this.ratedBots.find(r => r.genome === genome);
-            return rated ? rated.rating : avgRating * 0.5;
-        });
+        this.activeLevelIdx = null;
+        document.getElementById('win-message').textContent = '';
+        this._renderComparisonView();
+    }
 
-        // Evolve
-        this.population.evolve(fitnessScores);
+    chooseWinner(idx) {
+        const slot = this.roundSlots[idx];
+        this.roundWinners.push(slot.genome);
+        this.activeLevelIdx = null;
+        document.getElementById('win-message').textContent = '';
+
+        const nextRound = this.tournamentRound + 1;
+        if (nextRound < 5) {
+            this._setupRound(nextRound);
+        } else {
+            this._triggerTournamentBreed();
+        }
+    }
+
+    _triggerTournamentBreed() {
+        const report = this.population.evolveFromWinners(this.roundWinners);
+        this.lastBreedingReport = report;
         this.saveGenerationHistory();
 
-        // Reset for new generation
-        this.ratedBots = [];
-        this.currentLevelRating = 0;
-        this.curationStats = [];
-        this.updateRatingDisplay();
-
-        // Hide breed button
-        document.getElementById('breed-btn').classList.remove('visible');
-
-        // Populate observe overlay
         this._populateObserveOverlay();
-
-        // BREED is transient - go straight to OBSERVE
         this.setPhase(PHASES.OBSERVE);
     }
 
+    // === OBSERVE OVERLAY ===
+
+    _createBotLine(genome, subtitle) {
+        const bot = new Bot(genome);
+        const line = document.createElement('div');
+        line.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 3px 0;';
+
+        const swatch = document.createElement('span');
+        swatch.style.cssText = `display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: ${bot.colors.primary};`;
+        line.appendChild(swatch);
+
+        const textWrap = document.createElement('span');
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = bot.name;
+        nameSpan.style.color = '#e0e0e0';
+        textWrap.appendChild(nameSpan);
+
+        if (subtitle) {
+            const sub = document.createElement('div');
+            sub.textContent = subtitle;
+            sub.style.cssText = 'font-size: 0.8em; color: #666; margin-top: 1px;';
+            textWrap.appendChild(sub);
+        }
+
+        line.appendChild(textWrap);
+        return line;
+    }
+
     _populateObserveOverlay() {
-        const stats = this.population.getStats();
-        const va = stats.visualAverages;
-        const sw = stats.styleWeights;
-        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
-        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
-
-        document.getElementById('observe-generation').textContent = stats.generation;
-
+        const report = this.lastBreedingReport;
         const container = document.getElementById('observe-stats');
         container.textContent = '';
 
-        const rows = [
-            ['Avg Grid Size', stats.averages.gridSize],
-            ['Avg Boxes', stats.averages.boxCount],
-            ['Avg Complexity', stats.averages.complexity],
-            ['Avg Wall Density', stats.averages.wallDensity],
-        ];
-        rows.forEach(([label, value]) => {
-            const div = document.createElement('div');
-            div.className = 'observe-stat';
-            const spanL = document.createElement('span');
-            spanL.className = 'observe-label';
-            spanL.textContent = label;
-            const spanV = document.createElement('span');
-            spanV.className = 'observe-value';
-            spanV.textContent = value;
-            div.append(spanL, spanV);
-            container.appendChild(div);
-        });
+        document.getElementById('observe-generation').textContent =
+            report ? report.generation : this.population.generation;
 
-        // Style mix row (spans full width)
-        const styleDiv = document.createElement('div');
-        styleDiv.className = 'observe-stat';
-        styleDiv.style.gridColumn = '1 / -1';
-        styleDiv.style.marginTop = '8px';
-        const styleL = document.createElement('span');
-        styleL.className = 'observe-label';
-        styleL.textContent = 'Style Mix';
-        const styleV = document.createElement('span');
-        styleV.className = 'observe-value';
-        styleV.style.color = '#a78bfa';
-        styleV.textContent = `Clusters ${sw.clusters}% / Maze ${sw.maze}% / Caves ${sw.caves}% / Rooms ${sw.clusteredRooms}%`;
-        styleDiv.append(styleL, styleV);
-        container.appendChild(styleDiv);
+        if (!report) return;
 
-        // Visual row
-        const visDiv = document.createElement('div');
-        visDiv.className = 'observe-stat';
-        visDiv.style.gridColumn = '1 / -1';
-        const visL = document.createElement('span');
-        visL.className = 'observe-label';
-        visL.textContent = 'Visual';
-        const visV = document.createElement('span');
-        visV.className = 'observe-value';
-        visV.style.color = '#f0abfc';
-        visV.textContent = `Palette ${va.palette}\u00b0 | ${tsLabel} | ${decLabel}`;
-        visDiv.append(visL, visV);
-        container.appendChild(visDiv);
+        // CHAMPION section
+        const champHeader = document.createElement('div');
+        champHeader.textContent = 'CHAMPION';
+        champHeader.style.cssText = 'color: #fbbf24; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-bottom: 4px;';
+        container.appendChild(champHeader);
+        container.appendChild(this._createBotLine(report.elite.genome, 'Survived unchanged'));
+
+        // NEW OFFSPRING section
+        const offspringHeader = document.createElement('div');
+        offspringHeader.textContent = 'NEW OFFSPRING';
+        offspringHeader.style.cssText = 'color: #4ade80; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 4px;';
+        container.appendChild(offspringHeader);
+
+        for (const rec of report.offspring) {
+            let parentLabel;
+            if (rec.parent1Genome === null) {
+                parentLabel = 'Fresh random genome';
+            } else {
+                const p1 = new Bot(rec.parent1Genome).name;
+                const p2 = new Bot(rec.parent2Genome).name;
+                parentLabel = rec.parent1Genome === rec.parent2Genome
+                    ? `from ${p1} (self-cross)`
+                    : `from ${p1} + ${p2}`;
+            }
+            container.appendChild(this._createBotLine(rec.genome, parentLabel));
+        }
+
+        // RETIRED section
+        if (report.eliminated.length > 0) {
+            const retiredHeader = document.createElement('div');
+            retiredHeader.textContent = 'RETIRED';
+            retiredHeader.style.cssText = 'color: #555; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 4px;';
+            container.appendChild(retiredHeader);
+
+            for (const genome of report.eliminated) {
+                const line = this._createBotLine(genome);
+                line.style.opacity = '0.6';
+                line.style.fontSize = '0.9em';
+                container.appendChild(line);
+            }
+        }
     }
 
     startNextCycle() {
-        this.startRelease();
+        this.startTournament();
     }
 
-    // === BREEDING MODE METHODS ===
-
-    rateCurrentLevel(rating) {
-        if (!this.currentBot || this.phase !== PHASES.RATE) return;
-
-        this.currentLevelRating = rating;
-
-        // Store this rating (store genome for breeding compatibility)
-        this.ratedBots.push({
-            bot: this.currentBot,
-            genome: this.currentBot.genome,
-            rating: rating
-        });
-
-        // Update star display
-        this.updateRatingDisplay();
-
-        // Update generation display
-        this.updateGenerationDisplay();
-
-        // Show/hide breed button and next puzzle button based on count
-        const breedBtn = document.getElementById('breed-btn');
-        const nextBtn = document.getElementById('next-puzzle-btn');
-        nextBtn.style.display = 'inline-block';
-        breedBtn.classList.toggle('visible', this.ratedBots.length >= 3);
-    }
-
-    updateRatingDisplay() {
-        const stars = document.querySelectorAll('.rating-stars .star-btn');
-        stars.forEach((star, i) => {
-            if (i < this.currentLevelRating) {
-                star.classList.add('active');
-            } else {
-                star.classList.remove('active');
-            }
-        });
-    }
-
-    updateGenerationDisplay() {
-        const display = document.getElementById('generation-display');
-        display.textContent = `Generation: ${this.population.generation} | Rated: ${this.ratedBots.length}`;
-    }
-
-    updateBotDisplay() {
-        if (!this.currentBot) return;
-
-        // Update curator info
-        if (this.curatorBot) {
-            const curatorInfo = document.getElementById('curator-name');
-            curatorInfo.textContent = this.curatorBot.name;
-            curatorInfo.style.color = this.curatorBot.colors.primary;
-            curatorInfo.style.fontWeight = 'bold';
-        }
-
-        // Update creator bot name
-        document.getElementById('bot-name').textContent = this.currentBot.name;
-
-        // Update personality with dominant style
-        const styleName = this.currentBot.genome.getDominantStyle();
-        document.getElementById('bot-personality').textContent =
-            `${this.currentBot.personality} [${styleName}]`;
-
-        // Draw creator bot sprite
-        const canvas = document.getElementById('bot-sprite');
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        this.currentBot.drawSprite(ctx, 40, 40, 70);
-    }
-
-    updatePopulationStats() {
-        const stats = this.population.getStats();
-        const display = document.getElementById('population-stats');
-        display.style.display = 'block';
-        const sw = stats.styleWeights;
-        const va = stats.visualAverages;
-        const tsLabel = va.tileStyle < 0.33 ? 'Angular' : va.tileStyle < 0.66 ? 'Balanced' : 'Organic';
-        const decLabel = va.decoration < 0.33 ? 'Minimal' : va.decoration < 0.66 ? 'Moderate' : 'Rich';
-        display.innerHTML = `
-            <strong>Population Averages (Gen ${stats.generation}):</strong><br>
-            Grid: ${stats.averages.gridSize} |
-            Boxes: ${stats.averages.boxCount} |
-            Complexity: ${stats.averages.complexity} |
-            Density: ${stats.averages.wallDensity}<br>
-            <span style="color: #a78bfa;">Clusters ${sw.clusters}% / Maze ${sw.maze}% / Caves ${sw.caves}% / Rooms ${sw.clusteredRooms}%</span><br>
-            <span style="color: #f0abfc;">Palette: ${va.palette}&deg; | Style: ${tsLabel} | Decor: ${decLabel}</span>
-        `;
-
-        // Update curation stats if available
-        if (this.curationStats.length > 0) {
-            const avgAffinity = this.curationStats.reduce((sum, s) => sum + s.affinity, 0) / this.curationStats.length;
-            const curationDisplay = document.getElementById('curation-stats');
-            curationDisplay.style.display = 'block';
-            curationDisplay.innerHTML = `
-                Curations: ${this.curationStats.length} selections |
-                Avg affinity: ${(avgAffinity * 100).toFixed(1)}%
-            `;
-        }
-    }
+    // === PERSISTENCE & EXPERIMENT TOOLS ===
 
     saveGenerationHistory() {
         const stats = this.population.getStats();
@@ -1021,9 +957,7 @@ export class Game {
             localStorage.removeItem('machinaLudensState');
             this.population = new Population(5);
             this.generationHistory = [];
-            this.ratedBots = [];
-            this.currentLevelRating = 0;
-            this.startRelease();
+            this.startTournament();
         }
     }
 
@@ -1057,25 +991,33 @@ export class Game {
         const content = document.getElementById('history-content');
 
         if (this.generationHistory.length === 0) {
-            content.innerHTML = '<p style="color: #666; font-style: italic;">No generation history yet. Breed your first generation to start tracking!</p>';
+            content.textContent = 'No generation history yet. Breed your first generation to start tracking!';
+            content.style.cssText = 'color: #666; font-style: italic;';
             return;
         }
+        content.style.cssText = '';
 
-        let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">';
-        html += '<thead><tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="padding: 5px; text-align: left; color: #aaa;">Gen</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Grid</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Boxes</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Complex</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Density</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Style</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Palette</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Tile</th>';
-        html += '<th style="padding: 5px; text-align: right; color: #aaa;">Decor</th>';
-        html += '</tr></thead><tbody>';
+        // Build table using DOM methods
+        const table = document.createElement('table');
+        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 0.85em;';
 
-        this.generationHistory.forEach(entry => {
-            // Determine dominant style from saved styleWeights if available
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.style.borderBottom = '1px solid #444';
+        const headers = ['Gen', 'Grid', 'Boxes', 'Complex', 'Density', 'Style', 'Palette', 'Tile', 'Decor'];
+        for (const h of headers) {
+            const th = document.createElement('th');
+            th.style.cssText = `padding: 5px; text-align: ${h === 'Gen' ? 'left' : 'right'}; color: #aaa;`;
+            th.textContent = h;
+            headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        const colors = ['#e0e0e0', '#4ade80', '#60a5fa', '#fbbf24', '#f87171', '#a78bfa', '#f0abfc', '#f0abfc', '#f0abfc'];
+
+        for (const entry of this.generationHistory) {
             let styleLabel = '-';
             if (entry.styleWeights) {
                 const sw = entry.styleWeights;
@@ -1087,7 +1029,6 @@ export class Game {
                 ].sort((a, b) => b.pct - a.pct);
                 styleLabel = `${styles[0].name} ${styles[0].pct}%`;
             }
-            // Visual averages (backward compat for old history entries)
             const va = entry.visualAverages || {};
             const paletteLabel = va.palette !== undefined ? `${va.palette}\u00b0` : '-';
             const tileLabel = va.tileStyle !== undefined
@@ -1096,21 +1037,30 @@ export class Game {
             const decorLabel = va.decoration !== undefined
                 ? (va.decoration < 0.33 ? 'Min' : va.decoration < 0.66 ? 'Mod' : 'Rich')
                 : '-';
-            html += '<tr style="border-bottom: 1px solid #333;">';
-            html += `<td style="padding: 5px; color: #e0e0e0;">${entry.generation}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #4ade80;">${entry.averages.gridSize}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #60a5fa;">${entry.averages.boxCount}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #fbbf24;">${entry.averages.complexity}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #f87171;">${entry.averages.wallDensity}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #a78bfa;">${styleLabel}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${paletteLabel}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${tileLabel}</td>`;
-            html += `<td style="padding: 5px; text-align: right; color: #f0abfc;">${decorLabel}</td>`;
-            html += '</tr>';
-        });
 
-        html += '</tbody></table>';
-        content.innerHTML = html;
+            const row = document.createElement('tr');
+            row.style.borderBottom = '1px solid #333';
+            const values = [
+                entry.generation, entry.averages.gridSize, entry.averages.boxCount,
+                entry.averages.complexity, entry.averages.wallDensity,
+                styleLabel, paletteLabel, tileLabel, decorLabel
+            ];
+            for (let ci = 0; ci < values.length; ci++) {
+                const td = document.createElement('td');
+                td.style.cssText = `padding: 5px; text-align: ${ci === 0 ? 'left' : 'right'}; color: ${colors[ci]};`;
+                td.textContent = values[ci];
+                row.appendChild(td);
+            }
+            tbody.appendChild(row);
+        }
+
+        table.appendChild(tbody);
+
+        // Clear and append
+        while (content.firstChild) {
+            content.removeChild(content.firstChild);
+        }
+        content.appendChild(table);
     }
 
     saveExperiment() {
@@ -1158,14 +1108,12 @@ export class Game {
 
                 this.population = Population.fromJSON(data.population);
                 this.generationHistory = data.generationHistory;
-                this.ratedBots = [];
-                this.currentLevelRating = 0;
 
-                this.savePersistentState(); // Save to localStorage
+                this.savePersistentState();
 
                 alert(`Experiment "${data.experimentName || 'Unnamed'}" loaded!\n\nGeneration: ${this.population.generation}\nHistory entries: ${this.generationHistory.length}`);
 
-                this.startRelease();
+                this.startTournament();
             } catch (err) {
                 alert('Failed to load experiment: ' + err.message);
                 console.error(err);
@@ -1173,11 +1121,6 @@ export class Game {
         };
         reader.readAsText(file);
 
-        // Reset the file input so the same file can be loaded again
         event.target.value = '';
-    }
-
-    breedNextGeneration() {
-        this.triggerBreed();
     }
 }

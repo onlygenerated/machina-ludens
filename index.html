@@ -98,7 +98,6 @@
             max-width: 100%;
             height: auto;
             touch-action: none;
-            transition: opacity 0.4s;
         }
 
         #touch-controls {
@@ -141,114 +140,6 @@
         .dpad-right { grid-column: 3; grid-row: 2; }
         .dpad-center { grid-column: 2; grid-row: 2; opacity: 0; pointer-events: none; }
 
-        @media (max-width: 768px) {
-            body {
-                padding: 10px;
-            }
-
-            h1 {
-                font-size: 1.5em;
-            }
-
-            #game-container {
-                padding: 15px;
-            }
-
-            button {
-                padding: 10px 14px;
-                font-size: 0.9em;
-            }
-
-            .phase-step {
-                padding: 6px 8px;
-                font-size: 0.7em;
-            }
-
-            .instructions {
-                font-size: 0.75em;
-            }
-
-            .overlay-inner {
-                padding: 20px;
-            }
-        }
-
-        .star-btn {
-            background: #3a3a3a;
-            border: 1px solid #555;
-            color: #666;
-            padding: 5px 10px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 1.2em;
-        }
-
-        .star-btn.active {
-            color: #fbbf24;
-            background: #4a4a3a;
-        }
-
-        #info {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-            font-size: 0.9em;
-            color: #aaa;
-        }
-
-        #rating-panel {
-            display: none;
-            margin-top: 15px;
-            padding: 15px;
-            background: #2a2a2a;
-            border-radius: 6px;
-            border: 1px solid #444;
-        }
-
-        #rating-panel h3 {
-            margin: 0 0 10px 0;
-            font-size: 0.9em;
-            color: #888;
-            text-align: center;
-        }
-
-        .rating-stars {
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-            margin-bottom: 10px;
-        }
-
-        .rating-stars .star-btn {
-            font-size: 1.5em;
-            padding: 8px 12px;
-        }
-
-        #generation-display {
-            text-align: center;
-            color: #666;
-            font-size: 0.85em;
-            margin-top: 10px;
-        }
-
-        #breed-btn {
-            display: none;
-            margin-top: 10px;
-            background: #5a3a5a;
-            border-color: #8a6a8a;
-        }
-
-        #breed-btn.visible {
-            display: inline-block;
-        }
-
-        #next-puzzle-btn {
-            display: none;
-            margin-top: 10px;
-            background: #3a5a3a;
-            border-color: #5a7a5a;
-        }
-
         button {
             background: #3a3a3a;
             border: 1px solid #555;
@@ -283,6 +174,182 @@
             font-size: 0.85em;
         }
 
+        /* === Comparison View === */
+        #comparison-view {
+            display: none;
+        }
+
+        #round-counter {
+            text-align: center;
+            color: #4ECDC4;
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        #preview-cards {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .preview-card {
+            background: #1e1e28;
+            border: 1px solid #3a3a4a;
+            border-radius: 8px;
+            padding: 12px;
+            width: 200px;
+            text-align: center;
+            transition: border-color 0.2s;
+            position: relative;
+        }
+
+        .preview-card:hover {
+            border-color: #4ECDC4;
+        }
+
+        .preview-bot-name {
+            font-weight: bold;
+            font-size: 0.95em;
+            margin-top: 8px;
+        }
+
+        .preview-traits {
+            color: #777;
+            font-size: 0.75em;
+            margin-top: 4px;
+        }
+
+        .newcomer-badge {
+            display: inline-block;
+            background: #2dd4bf;
+            color: #1a1a1a;
+            font-size: 0.7em;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-top: 6px;
+            letter-spacing: 0.05em;
+        }
+
+        .preview-completed {
+            color: #4ade80;
+            font-size: 0.85em;
+            margin-top: 6px;
+        }
+
+        .preview-btn-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .preview-play-btn {
+            flex: 1;
+            padding: 6px 0;
+            font-size: 0.85em;
+            background: #3a3a4a;
+            border: 1px solid #555;
+        }
+
+        .preview-choose-btn {
+            flex: 1;
+            padding: 6px 0;
+            font-size: 0.85em;
+            background: #2a4a3a;
+            border: 1px solid #4a7a5a;
+            color: #4ade80;
+        }
+
+        .preview-choose-btn:hover {
+            background: #3a5a4a;
+        }
+
+        /* === Play View === */
+        #play-view {
+            display: none;
+            text-align: center;
+        }
+
+        #play-bot-name {
+            font-weight: bold;
+            font-size: 1em;
+            margin-bottom: 8px;
+        }
+
+        #play-info {
+            color: #aaa;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        #play-controls {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        #play-controls button {
+            margin: 0 4px;
+        }
+
+        .play-choose-btn {
+            background: #2a4a3a !important;
+            border-color: #4a7a5a !important;
+            color: #4ade80 !important;
+        }
+
+        .play-choose-btn:hover {
+            background: #3a5a4a !important;
+        }
+
+        /* === Observe View === */
+        #observe-view {
+            display: none;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        #observe-view h2 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        #observe-view p {
+            color: #888;
+            font-size: 0.9em;
+            margin: 8px 0;
+        }
+
+        #observe-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin: 15px auto;
+            text-align: left;
+            max-height: 320px;
+            overflow-y: auto;
+            max-width: 400px;
+        }
+
+        #observe-view button {
+            margin-top: 20px;
+            padding: 12px 28px;
+            font-size: 1em;
+            background: #4ECDC4;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #observe-view button:hover {
+            background: #5de0d7;
+        }
+
+        /* === Loading overlay === */
         #loading-overlay {
             display: none;
             position: absolute;
@@ -307,95 +374,43 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Overlays (Release + Observe) */
-        .game-overlay {
-            display: none;
-            position: absolute;
-            inset: 0;
-            background: rgba(26, 26, 30, 0.92);
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 5;
-            text-align: center;
-        }
+        /* === Mobile === */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
 
-        .overlay-inner {
-            padding: 30px;
-            max-width: 400px;
-        }
+            h1 {
+                font-size: 1.5em;
+            }
 
-        .overlay-inner h2 {
-            font-size: 1.3em;
-            margin-bottom: 15px;
-            color: #e0e0e0;
-        }
+            #game-container {
+                padding: 15px;
+            }
 
-        .overlay-inner p {
-            color: #888;
-            font-size: 0.9em;
-            margin: 8px 0;
-        }
+            button {
+                padding: 10px 14px;
+                font-size: 0.9em;
+            }
 
-        .overlay-inner button {
-            margin-top: 20px;
-            padding: 12px 28px;
-            font-size: 1em;
-            background: #4ECDC4;
-            color: #1a1a1a;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-        }
+            .phase-step {
+                padding: 6px 8px;
+                font-size: 0.7em;
+            }
 
-        .overlay-inner button:hover {
-            background: #5de0d7;
-        }
+            .instructions {
+                font-size: 0.75em;
+            }
 
-        #release-bot-name {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin: 10px 0 5px 0;
-        }
+            #preview-cards {
+                flex-direction: column;
+                align-items: center;
+            }
 
-        #release-bot-personality {
-            font-style: italic;
-            color: #888;
-            font-size: 0.85em;
-            margin-bottom: 10px;
-        }
-
-        /* Observe overlay stats */
-        .observe-stat {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            font-size: 0.85em;
-        }
-
-        .observe-label {
-            color: #888;
-        }
-
-        .observe-value {
-            color: #e0e0e0;
-            font-weight: bold;
-        }
-
-        #observe-stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 4px 20px;
-            margin: 15px 0;
-            text-align: left;
-        }
-
-        /* Play controls */
-        #play-controls {
-            display: none;
-            margin-top: 20px;
-            text-align: center;
+            .preview-card {
+                width: 90%;
+                max-width: 300px;
+            }
         }
     </style>
 </head>
@@ -405,49 +420,46 @@
 
     <div id="game-container">
         <div id="phase-bar">
-            <div class="phase-step active">Release</div>
-            <div class="phase-step">Play</div>
-            <div class="phase-step">Rate</div>
+            <div class="phase-step active">Choose</div>
             <div class="phase-step">Breed</div>
             <div class="phase-step">Observe</div>
         </div>
 
-        <div id="info">
-            <div>Level: <span id="level-num">1</span></div>
-            <div>Moves: <span id="move-count">0</span></div>
-            <div>Pushes: <span id="push-count">0</span></div>
-        </div>
-
-        <div style="position: relative; display: inline-block;">
-            <canvas id="canvas" width="480" height="480"></canvas>
-            <div id="loading-overlay">
-                <div class="spinner"></div>
-                <div style="margin-top: 12px;">Generating...</div>
-            </div>
-
-            <!-- Release overlay -->
-            <div id="release-overlay" class="game-overlay">
-                <div class="overlay-inner">
-                    <canvas id="release-bot-sprite" width="100" height="100" style="border-radius: 50%; background: #1a1a1a; margin: 0 auto; display: block;"></canvas>
-                    <div id="release-bot-name">-</div>
-                    <div id="release-bot-personality">-</div>
-                    <p>presents a puzzle...</p>
-                    <button onclick="game.startPuzzle()">Start Puzzle</button>
-                </div>
-            </div>
-
-            <!-- Observe overlay -->
-            <div id="observe-overlay" class="game-overlay">
-                <div class="overlay-inner">
-                    <h2>Generation <span id="observe-generation">0</span></h2>
-                    <p>The population has evolved.</p>
-                    <div id="observe-stats"></div>
-                    <button onclick="game.startNextCycle()">Continue</button>
-                </div>
+        <!-- Comparison view: 3 level preview cards -->
+        <div id="comparison-view">
+            <div id="round-counter">Round 1 of 5</div>
+            <div id="preview-cards">
+                <!-- Cards are generated dynamically by _renderComparisonView() -->
             </div>
         </div>
 
-        <div id="win-message"></div>
+        <!-- Play view: expanded single level -->
+        <div id="play-view">
+            <div id="play-bot-name">-</div>
+            <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span></div>
+            <div style="position: relative; display: inline-block;">
+                <canvas id="canvas" width="480" height="480"></canvas>
+                <div id="loading-overlay">
+                    <div class="spinner"></div>
+                    <div style="margin-top: 12px;">Generating...</div>
+                </div>
+            </div>
+            <div id="win-message"></div>
+            <div id="play-controls">
+                <button onclick="game.backToComparison()">&#x2190; Back</button>
+                <button onclick="game.undo()">&#x21B6; Undo</button>
+                <button onclick="game.reset()">&#x27F2; Reset</button>
+                <button class="play-choose-btn" onclick="game.chooseWinner(game.activeLevelIdx)">Choose This Level &#x2714;</button>
+            </div>
+        </div>
+
+        <!-- Observe view -->
+        <div id="observe-view">
+            <h2>Generation <span id="observe-generation">0</span></h2>
+            <p>The breeding results are in.</p>
+            <div id="observe-stats"></div>
+            <button onclick="game.startNextCycle()">Continue</button>
+        </div>
 
         <div id="touch-controls">
             <div class="dpad">
@@ -456,36 +468,6 @@
                 <div class="dpad-center"></div>
                 <div class="dpad-btn dpad-right" ontouchstart="game.handleTouch(1, 0)" ontouchend="event.preventDefault()">&#x27A1;</div>
                 <div class="dpad-btn dpad-down" ontouchstart="game.handleTouch(0, 1)" ontouchend="event.preventDefault()">&#x2B07;</div>
-            </div>
-        </div>
-
-        <div id="play-controls">
-            <button onclick="game.undo()">&#x21B6; Undo</button>
-            <button onclick="game.reset()">&#x27F2; Reset</button>
-            <button onclick="game.giveUp()" style="background: #5a3a3a; border-color: #7a5a5a;">Give Up</button>
-        </div>
-
-        <div id="rating-panel">
-            <div id="bot-presentation" style="text-align: center; margin-bottom: 15px;">
-                <p id="curator-info" style="margin: 5px 0 10px 0; color: #666; font-size: 0.85em;">
-                    <span id="curator-name">-</span> presents:
-                </p>
-                <canvas id="bot-sprite" width="80" height="80" style="display: block; margin: 10px auto; border-radius: 50%; background: #1a1a1a;"></canvas>
-                <h3 id="bot-name" style="margin: 5px 0; color: #e0e0e0; font-size: 1.1em;">-</h3>
-                <p id="bot-personality" style="margin: 5px 0; color: #888; font-size: 0.85em; font-style: italic;">-</p>
-                <p style="margin: 10px 0 5px 0; color: #666; font-size: 0.9em;">Rate this puzzle:</p>
-            </div>
-            <div class="rating-stars">
-                <button class="star-btn" onclick="game.rateCurrentLevel(1)">&#x2605;</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(2)">&#x2605;</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(3)">&#x2605;</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(4)">&#x2605;</button>
-                <button class="star-btn" onclick="game.rateCurrentLevel(5)">&#x2605;</button>
-            </div>
-            <div id="generation-display">Generation: 0 | Rated: 0</div>
-            <div style="text-align: center;">
-                <button id="next-puzzle-btn" onclick="game.startRelease()">Next Puzzle &#x2192;</button>
-                <button id="breed-btn" onclick="game.triggerBreed()">&#x1F9EC; Breed Next Generation</button>
             </div>
         </div>
 

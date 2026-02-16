@@ -260,13 +260,18 @@ export class Population {
         // Select top 50% as parents
         const parents = pairs.slice(0, Math.ceil(pairs.length / 2)).map(p => p.genome);
 
+        // Capture eliminated genomes (bottom half)
+        const eliminated = pairs.slice(Math.ceil(pairs.length / 2)).map(p => p.genome);
+
         // Create next generation
         const nextGen = [];
 
         // Keep the best genome (elitism)
-        nextGen.push(parents[0].clone());
+        const eliteParent = parents[0];
+        nextGen.push(eliteParent.clone());
 
-        // Fill rest with crossover + mutation
+        // Fill rest with crossover + mutation, tracking parentage
+        const offspringRecords = [];
         while (nextGen.length < this.genomes.length) {
             // Pick two random parents
             const parent1 = parents[Math.floor(Math.random() * parents.length)];
@@ -279,10 +284,98 @@ export class Population {
             const mutated = child.mutate(0.2);
 
             nextGen.push(mutated);
+            offspringRecords.push({
+                genome: mutated,
+                parent1Genome: parent1,
+                parent2Genome: parent2
+            });
         }
 
         this.genomes = nextGen;
         this.generation++;
+
+        // Return breeding report
+        return {
+            generation: this.generation,
+            elite: { genome: nextGen[0], parentGenome: eliteParent },
+            offspring: offspringRecords,
+            eliminated
+        };
+    }
+
+    // Evolve from tournament winners (array of 5 winning Genome refs, may contain duplicates)
+    evolveFromWinners(winnerGenomes) {
+        // Record history entry
+        this.history.push({
+            generation: this.generation,
+            avgFitness: null,
+            maxFitness: null,
+            genomes: this.genomes.map(g => g.toJSON())
+        });
+
+        // Count wins per genome
+        const winCounts = new Map();
+        for (const g of winnerGenomes) {
+            winCounts.set(g, (winCounts.get(g) || 0) + 1);
+        }
+
+        // Find champion (most wins, random tiebreaker)
+        let maxWins = 0;
+        const champions = [];
+        for (const [genome, count] of winCounts) {
+            if (count > maxWins) {
+                maxWins = count;
+                champions.length = 0;
+                champions.push(genome);
+            } else if (count === maxWins) {
+                champions.push(genome);
+            }
+        }
+        const champion = champions[Math.floor(Math.random() * champions.length)];
+
+        // Deduplicate winners into breeding pool
+        const breedingPool = [...winCounts.keys()];
+
+        // Build next generation: 1 elite clone + 3 offspring + 1 fresh random
+        const nextGen = [];
+        const eliteClone = champion.clone();
+        nextGen.push(eliteClone);
+
+        const offspringRecords = [];
+        while (nextGen.length < 4) {
+            const parent1 = breedingPool[Math.floor(Math.random() * breedingPool.length)];
+            const parent2 = breedingPool[Math.floor(Math.random() * breedingPool.length)];
+            const child = Genome.crossover(parent1, parent2);
+            const mutated = child.mutate(0.2);
+            nextGen.push(mutated);
+            offspringRecords.push({
+                genome: mutated,
+                parent1Genome: parent1,
+                parent2Genome: parent2
+            });
+        }
+
+        // 1 fresh random genome
+        const freshGenome = new Genome();
+        nextGen.push(freshGenome);
+        offspringRecords.push({
+            genome: freshGenome,
+            parent1Genome: null,
+            parent2Genome: null
+        });
+
+        // Determine eliminated = old population genomes not in breeding pool
+        const eliminated = this.genomes.filter(g => !breedingPool.includes(g));
+
+        this.genomes = nextGen;
+        this.generation++;
+
+        return {
+            generation: this.generation,
+            elite: { genome: eliteClone, parentGenome: champion },
+            offspring: offspringRecords,
+            eliminated
+        };
     }
 
     // Get statistics about current population
@@ -383,12 +476,15 @@ export class Bot {
     static generateName(genome) {
         const genes = genome.genes;
 
-        // Adjectives based on traits
-        const sizeAdjectives = ['Tiny', 'Small', 'Big', 'Large', 'Huge', 'Giant'];
-        const complexityAdjectives = ['Simple', 'Plain', 'Clever', 'Tricky', 'Complex', 'Intricate'];
-        const densityAdjectives = ['Sparse', 'Open', 'Busy', 'Dense', 'Packed', 'Maze'];
+        // Pool of mixed adjectives (not locked to a single trait dimension)
+        const adjectives = [
+            'Tiny', 'Small', 'Big', 'Large', 'Huge', 'Giant',
+            'Simple', 'Plain', 'Clever', 'Tricky', 'Complex', 'Intricate',
+            'Sparse', 'Open', 'Busy', 'Dense', 'Packed', 'Wild',
+            'Calm', 'Sharp', 'Smooth', 'Bright', 'Dark', 'Swift',
+            'Steady', 'Bold', 'Shy', 'Eager', 'Wise', 'Lucky'
+        ];
 
-        // Names (alliterative when possible)
         const names = [
             'Alice', 'Bob', 'Charlie', 'Dana', 'Eve', 'Frank',
             'Grace', 'Hank', 'Ivy', 'Jack', 'Kelly', 'Leo',
@@ -397,26 +493,27 @@ export class Bot {
             'Yuki', 'Zara', 'Betty', 'Max', 'Sam', 'Ruby'
         ];
 
-        // Pick adjective based on dominant trait
-        const sizeIdx = Math.min(5, Math.floor((genes.gridSize - 7) / 15)); // 7-80 -> 0-5
-        const complexIdx = Math.min(5, Math.floor((genes.complexity - 20) / 36)); // 20-200 -> 0-5
-        const densityIdx = Math.min(5, Math.floor(genes.wallDensity / 0.06)); // 0-0.3 -> 0-5
+        // Hash all 11 genes with prime multipliers so small mutations
+        // (e.g. boxCount ±1) produce very different names
+        const h = Math.abs(
+            genes.gridSize * 7919 +
+            genes.boxCount * 4391 +
+            genes.complexity * 6571 +
+            Math.round(genes.wallDensity * 10000) * 3571 +
+            genes.styleClusters * 2903 +
+            genes.styleMaze * 5381 +
+            genes.styleCaves * 4729 +
+            genes.styleClusteredRooms * 6197 +
+            Math.round(genes.palette * 10000) * 8537 +
+            Math.round(genes.tileStyle * 10000) * 7331 +
+            Math.round(genes.decoration * 10000) * 9173
+        );
 
-        let adjective;
-        const maxTrait = Math.max(sizeIdx, complexIdx, densityIdx);
-        if (maxTrait === sizeIdx) {
-            adjective = sizeAdjectives[Math.min(5, Math.max(0, sizeIdx))];
-        } else if (maxTrait === complexIdx) {
-            adjective = complexityAdjectives[Math.min(5, Math.max(0, complexIdx))];
-        } else {
-            adjective = densityAdjectives[Math.min(5, Math.max(0, densityIdx))];
-        }
+        // Use different bits for adjective vs name to decorrelate them
+        const adjIdx = h % adjectives.length;
+        const nameIdx = Math.floor(h / adjectives.length) % names.length;
 
-        // Pick name based on genome hash
-        const nameIdx = (genes.gridSize * genes.boxCount + genes.complexity) % names.length;
-        const name = names[nameIdx];
-
-        return `${adjective} ${name}`;
+        return `${adjectives[adjIdx]} ${names[nameIdx]}`;
     }
 
     // Generate personality description

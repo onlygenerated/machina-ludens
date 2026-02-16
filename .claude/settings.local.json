@@ -50,7 +50,14 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(node -c:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_console_messages"
     ]
   }
 }
