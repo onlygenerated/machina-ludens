@@ -5,8 +5,6 @@
 ✅ Touch controls and swipe gestures (D-pad + swipe)
 ✅ Procedural level generation with reverse-play algorithm (4 style algorithms)
 ✅ Genome-based evolution system with crossover and mutation
-✅ Inline rating system with 5-star reviews
-✅ Population breeding based on player ratings
 ✅ Auto-generated levels on page load
 ✅ Larger, more complex boards with internal obstacles
 ✅ Cultural divergence validated (Phase 1.3 complete)
@@ -14,8 +12,9 @@
 ✅ Bot curation system (Phase 2.2)
 ✅ Evolvable visual genes (palette, tileStyle, decoration)
 ✅ Consistent game piece rendering across phenotypes (fixed colors independent of genome)
+✅ Tournament-based selection: Choose → Breed → Observe (Phase 2.4)
 
-**Current Phase:** Phase 2 - Bot Population (2.1 and 2.2 complete, 2.3 next)
+**Current Phase:** Phase 2 - Bot Population (2.1, 2.2, 2.3, 2.4 complete)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
@@ -93,14 +92,26 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [x] Bots present top picks to player
 - [x] Player selects which bots reproduce
 
-### Milestone 2.3: Core Game Loop (NEXT)
-- [ ] Release phase: bots generate puzzles
-- [ ] Curate phase: player plays bot selections
-- [ ] Evaluate phase: player rates experiences
-- [ ] Breed phase: successful bots reproduce
-- [ ] Observe phase: view population stats
+### Milestone 2.3: Core Game Loop ✅ (replaced by 2.4)
+- [x] Release phase: bot presents puzzle with sprite, name, and personality overlay
+- [x] Play phase: player solves puzzle with input guards (only active during Play)
+- [x] Rate phase: player rates experience with 5-star system after win or Give Up
+- [x] Breed phase: successful bots reproduce (transient, triggers evolution)
+- [x] Observe phase: parent lineage view (champion, offspring with parents, retired bots)
+- [x] Phase bar UI with active/completed step indicators
+- [x] Full loop: Release → Play → Rate → (Next Puzzle or Breed) → Observe → Release
 
-**Success Criteria:** Full breeding loop feels like "tending a garden" of bot cultures
+### Milestone 2.4: Tournament Selection System ✅
+- [x] Tournament-based "pick best of 3" replacing star ratings
+- [x] 5 rounds per generation, 3 candidates per round (1 newcomer + 2 existing)
+- [x] Comparison view: 3 side-by-side preview cards with bot names, traits, NEW badges
+- [x] Play view: expand any level to full-size with Back/Undo/Reset/Choose controls
+- [x] Winner breeding: champion (most wins) as elite + 3 crossover offspring + 1 fresh random
+- [x] `Population.evolveFromWinners()` method for tournament-based breeding
+- [x] Extracted `renderGrid()` for reuse at both preview (180px) and play (600px) scales
+- [x] Simplified phase bar: Choose → Breed → Observe (3 phases, down from 5)
+
+**Success Criteria:** ✅ Full breeding loop feels like "tending a garden" of bot cultures
 
 ---
 
@@ -179,12 +190,8 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ## Next Immediate Steps
 
-**Current Focus (Milestone 2.3 - Core Game Loop):**
-1. Structure the full game session with clear phases
-2. Wire up Release → Curate → Evaluate → Breed → Observe cycle
-3. Polish the visual feedback for state transitions
-
-**After Phase 2:**
+**Phase 2 complete (including tournament selection).** Next steps:
+- Phase 2 polish: Bot family tree display (Milestone 2.1 remaining item)
 - Phase 3: Introduce mechanic mutations (special tiles, rule variations)
 - Phase 4: Polish & UX (animations, sound, session structure)
 
@@ -193,25 +200,27 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 ## Implementation Notes
 
 ### Current Architecture
-- `generator.js`: SokobanGenerator class with reverse-play algorithm
-- `genome.js`: Genome and Population classes for evolution
-- `index.html`: Single-file web app with game logic and inline rating UI
+- `shared/generator.js`: SokobanGenerator class with reverse-play algorithm
+- `shared/genome.js`: Genome, Population, and Bot classes for evolution
+- `client/game.js`: Game class with tournament loop, canvas rendering, input handling
+- `client/main.js`: Entry point, creates Game instance
+- `index.html`: HTML/CSS structure with comparison, play, and observe views
 - Population size: 5 genomes per generation
-- Selection: Top 50% become parents, best genome preserved (elitism)
+- Selection: Tournament (pick best of 3, 5 rounds) → champion elite + crossover offspring + fresh random
 - Mutation rate: 20% per gene
 
 ### Key Design Decisions
 1. **Reverse-play generation**: Start with solved state, pull boxes away from targets
 2. **Validation layers**: Multiple checks prevent unsolvable/deadlocked levels
-3. **Inline rating**: Streamlined UX keeps player in flow state
+3. **Tournament selection**: Comparative judgment (pick best of 3) replaces absolute rating (5 stars)
 4. **No pre-solved boxes**: All levels start fully unsolved for consistent difficulty
 5. **Structured obstacles**: Small wall clusters create interesting navigation challenges
+6. **Newcomer injection**: 1 fresh random genome per round + 1 per generation prevents monoculture
 
 ### Known Limitations
 - Square grids only (width = height)
 - No solution length metric yet
 - No genome parameter visualization during play
-- No population save/load
 
 ---
 
