@@ -1001,6 +1001,8 @@ export class Game {
             const hue = (parseInt(rec.id, 36) * 137) % 360;
             return `hsl(${hue}, 70%, 68%)`;
         };
+        // Newcomer nodes (won a round but weren't in the original gen) get a dashed ring like wild cards
+        const isNewcomer = (rec) => rec.isNewcomer === true;
 
         // Name from stored lineage record (matches Bot names in the Observe list above)
         const getName = (rec) => rec.name || rec.id;
@@ -1073,11 +1075,22 @@ export class Game {
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // Wild card: dashed outer ring
+            // Wild card: dashed outer ring (purple)
             if (rec.isWildCard) {
                 ctx.beginPath();
                 ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(192,160,255,0.65)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Newcomer (won a round, late addition to lineage): dashed cyan ring
+            if (isNewcomer(rec)) {
+                ctx.beginPath();
+                ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(78,205,196,0.75)';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([4, 3]);
                 ctx.stroke();

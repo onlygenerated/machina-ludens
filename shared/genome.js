@@ -389,6 +389,36 @@ export class Population {
         this.generation++;
 
         // Record lineage for family tree
+        // First, ensure all parents are in lineage (newcomers who won may not be recorded yet)
+        const knownIds = new Set(this.lineage.map(r => r.id));
+        const parentGenNum = this.generation - 1; // the generation they competed in
+        for (const parent of breedingPool) {
+            if (!knownIds.has(parent._id)) {
+                this.lineage.push({
+                    id: parent._id,
+                    name: Bot.generateName(parent),
+                    generation: parentGenNum,
+                    parentIds: [],
+                    isWildCard: false,
+                    isElite: false,
+                    isNewcomer: true
+                });
+                knownIds.add(parent._id);
+            }
+        }
+        // Also ensure champion is registered (it should be, but guard anyway)
+        if (!knownIds.has(champion._id)) {
+            this.lineage.push({
+                id: champion._id,
+                name: Bot.generateName(champion),
+                generation: parentGenNum,
+                parentIds: [],
+                isWildCard: false,
+                isElite: false,
+                isNewcomer: true
+            });
+        }
+
         const nextGenNum = this.generation;
         this.lineage.push({
             id: eliteClone._id,
