@@ -951,75 +951,71 @@ export class Game {
 
         // If only one generation, show placeholder
         if (visibleGens.length < 2) {
-            canvas.width = 300;
-            canvas.height = 40;
+            canvas.width = 320;
+            canvas.height = 44;
             canvas.style.background = 'transparent';
             const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, 300, 40);
-            ctx.fillStyle = '#444';
+            ctx.clearRect(0, 0, 320, 44);
+            ctx.fillStyle = '#555';
             ctx.font = '11px Courier New';
             ctx.textAlign = 'center';
-            ctx.fillText('Complete a cycle to see the family tree', 150, 24);
+            ctx.fillText('Complete a cycle to grow the family tree', 160, 26);
             return;
         }
 
-        const NODE_R = 10;
-        const COL_W = 56;
-        const ROW_H = 64;
-        const PAD_X = 28;
-        const PAD_Y = 24;
-        const LEGEND_H = 22;
-        const NAME_H = 14; // space for bot name below node
+        const NODE_R = 11;
+        const COL_W = 60;
+        const ROW_H = 70;
+        const LABEL_W = 30; // left margin for gen labels
+        const PAD_Y = 20;
+        const LEGEND_H = 26;
 
         const maxBots = Math.max(...visibleGens.map(g => byGen.get(g).length));
-        const canvasW = Math.max(260, PAD_X * 2 + maxBots * COL_W);
-        const canvasH = PAD_Y * 2 + visibleGens.length * ROW_H + LEGEND_H;
+        const canvasW = LABEL_W + maxBots * COL_W + 8;
+        const canvasH = PAD_Y + visibleGens.length * ROW_H + LEGEND_H;
 
         canvas.width = canvasW;
         canvas.height = canvasH;
-        canvas.style.background = '#111';
-        canvas.style.borderRadius = '6px';
-        canvas.style.padding = '4px';
+        canvas.style.background = '#1a1a22';
+        canvas.style.borderRadius = '8px';
+        canvas.style.padding = '0';
 
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvasW, canvasH);
 
-        // Build id → bot name map using Bot class
-        const botNames = new Map();
-        for (const rec of lineage) {
-            // Derive a short consistent name from the id
-            const hash = parseInt(rec.id, 36);
-            const adjectives = ['Alpha','Beta','Gamma','Delta','Echo','Zeta','Theta','Sigma','Omega','Kappa'];
-            const nouns = ['Prime','Core','Node','Pulse','Flux','Grid','Wave','Arc','Cog','Null'];
-            botNames.set(rec.id, adjectives[hash % 10] + '-' + nouns[(hash >> 4) % 10]);
-        }
+        // Alternating row backgrounds for readability
+        visibleGens.forEach((gen, rowIdx) => {
+            if (rowIdx % 2 === 0) {
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(0, PAD_Y + rowIdx * ROW_H - ROW_H * 0.35, canvasW, ROW_H);
+            }
+        });
 
-        // Compute node positions: id → {x, y, color, rec}
+        // Consistent color per genome id
+        const getColor = (rec) => {
+            if (rec.isWildCard) return `hsl(270, 80%, 72%)`;
+            if (rec.isElite) return `hsl(45, 100%, 62%)`;
+            const hue = (parseInt(rec.id, 36) * 137) % 360;
+            return `hsl(${hue}, 70%, 68%)`;
+        };
+
+        // Compute node positions
         const nodePos = new Map();
-
         visibleGens.forEach((gen, rowIdx) => {
             const bots = byGen.get(gen);
-            const totalW = bots.length * COL_W;
-            const startX = (canvasW - totalW) / 2 + COL_W / 2;
+            const rowW = bots.length * COL_W;
+            const startX = LABEL_W + (canvasW - LABEL_W - rowW) / 2 + COL_W / 2;
             const y = PAD_Y + rowIdx * ROW_H;
-
             bots.forEach((rec, colIdx) => {
                 const x = startX + colIdx * COL_W;
-                const hue = (parseInt(rec.id, 36) * 137) % 360;
-                let color;
-                if (rec.isWildCard) color = `hsl(270, 70%, 65%)`;
-                else if (rec.isElite) color = `hsl(45, 95%, 60%)`;
-                else color = `hsl(${hue}, 65%, 60%)`;
-
-                nodePos.set(rec.id, { x, y, color, rec });
+                nodePos.set(rec.id, { x, y, color: getColor(rec), rec });
             });
         });
 
-        // Draw edges (behind nodes)
+        // Draw edges — bright, visible lines
         for (const [id, pos] of nodePos) {
             const { rec } = pos;
             if (!rec.parentIds || rec.parentIds.length === 0) continue;
-            // Deduplicate parent edges so self-cross only draws one line
             const drawnParents = new Set();
             for (const pid of rec.parentIds) {
                 if (drawnParents.has(pid)) continue;
@@ -1027,84 +1023,112 @@ export class Game {
                 const ppos = nodePos.get(pid);
                 if (!ppos) continue;
                 const midY = (ppos.y + pos.y) / 2;
+                // Draw a bright gradient line
+                const grad = ctx.createLinearGradient(ppos.x, ppos.y, pos.x, pos.y);
+                grad.addColorStop(0, ppos.color + 'cc');
+                grad.addColorStop(1, pos.color + 'cc');
                 ctx.beginPath();
-                ctx.moveTo(ppos.x, ppos.y);
-                ctx.bezierCurveTo(ppos.x, midY, pos.x, midY, pos.x, pos.y);
-                ctx.strokeStyle = pos.color + '55';
-                ctx.lineWidth = 1.5;
+                ctx.moveTo(ppos.x, ppos.y + NODE_R);
+                ctx.bezierCurveTo(ppos.x, midY, pos.x, midY, pos.x, pos.y - NODE_R);
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = 2;
                 ctx.setLineDash([]);
                 ctx.stroke();
             }
         }
 
-        // Draw nodes
+        // Draw nodes on top of edges
         for (const [id, pos] of nodePos) {
             const { x, y, color, rec } = pos;
+
+            // Dark backing circle so node is crisp on any edge color
+            ctx.beginPath();
+            ctx.arc(x, y, NODE_R + 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#1a1a22';
+            ctx.fill();
 
             // Glow for elite
             if (rec.isElite) {
                 ctx.beginPath();
-                ctx.arc(x, y, NODE_R + 6, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(251,191,36,0.2)';
+                ctx.arc(x, y, NODE_R + 7, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(251,191,36,0.15)';
                 ctx.fill();
             }
 
-            // Node circle
+            // Node fill
             ctx.beginPath();
             ctx.arc(x, y, NODE_R, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
 
-            // Wild card: dashed ring
+            // Node border
+            ctx.beginPath();
+            ctx.arc(x, y, NODE_R, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Wild card: dashed outer ring
             if (rec.isWildCard) {
                 ctx.beginPath();
-                ctx.arc(x, y, NODE_R + 3, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(167,139,250,0.7)';
+                ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(192,160,255,0.65)';
                 ctx.lineWidth = 1.5;
-                ctx.setLineDash([3, 3]);
+                ctx.setLineDash([4, 3]);
                 ctx.stroke();
                 ctx.setLineDash([]);
             }
 
-            // Elite: star
+            // Elite: star glyph
             if (rec.isElite) {
                 ctx.fillStyle = '#1a1a1a';
-                ctx.font = 'bold 9px sans-serif';
+                ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('★', x, y + 3);
+                ctx.textBaseline = 'middle';
+                ctx.fillText('★', x, y);
+                ctx.textBaseline = 'alphabetic';
             }
 
-            // Bot name label below node
-            const name = botNames.get(rec.id) || rec.id;
+            // Name below node
             ctx.fillStyle = color;
             ctx.font = '8px Courier New';
             ctx.textAlign = 'center';
-            ctx.fillText(name, x, y + NODE_R + NAME_H - 2);
+            ctx.fillText(rec.id, x, y + NODE_R + 11);
 
-            // Gen label on leftmost node in each row
+            // Gen label at left edge of each row (once per row)
             const rowNodes = [...nodePos.values()].filter(p => p.rec.generation === rec.generation);
-            const leftmost = rowNodes.reduce((a, b) => a.x < b.x ? a : b);
-            if (leftmost === pos) {
+            if (rowNodes[0] === pos) {
                 ctx.fillStyle = '#555';
-                ctx.font = '9px Courier New';
+                ctx.font = 'bold 9px Courier New';
                 ctx.textAlign = 'left';
-                ctx.fillText(`G${rec.generation}`, 2, y + 4);
+                ctx.fillText(`G${rec.generation}`, 4, y + 4);
             }
         }
 
-        // Legend
-        const legendY = canvasH - 7;
+        // Legend strip at bottom
+        const legendY = canvasH - 10;
         ctx.font = '9px Courier New';
+        ctx.textAlign = 'left';
 
-        ctx.beginPath(); ctx.arc(PAD_X, legendY, 5, 0, Math.PI * 2);
-        ctx.fillStyle = 'hsl(45,95%,60%)'; ctx.fill();
-        ctx.fillStyle = '#666'; ctx.textAlign = 'left';
-        ctx.fillText('Champion', PAD_X + 9, legendY + 3);
+        // Champion
+        ctx.beginPath(); ctx.arc(LABEL_W, legendY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsl(45,100%,62%)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#888'; ctx.fillText('Champion', LABEL_W + 10, legendY + 3);
 
-        ctx.beginPath(); ctx.arc(PAD_X + 95, legendY, 5, 0, Math.PI * 2);
-        ctx.fillStyle = 'hsl(270,70%,65%)'; ctx.fill();
-        ctx.fillStyle = '#666';
-        ctx.fillText('Wild Card', PAD_X + 104, legendY + 3);
+        // Wild card
+        const wcX = LABEL_W + 100;
+        ctx.beginPath(); ctx.arc(wcX, legendY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsl(270,80%,72%)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.stroke();
+        ctx.fillStyle = '#888'; ctx.fillText('Wild Card', wcX + 10, legendY + 3);
+
+        // Offspring
+        const offX = LABEL_W + 195;
+        ctx.beginPath(); ctx.arc(offX, legendY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsl(120,60%,65%)'; ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#888'; ctx.fillText('Offspring', offX + 10, legendY + 3);
     }
 
     startNextCycle() {

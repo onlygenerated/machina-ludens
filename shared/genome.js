@@ -177,7 +177,8 @@ export class Genome {
 
     // Create a copy of this genome
     clone() {
-        return new Genome(this.genes, this._id);
+        // Clone gets a NEW id — it's a new organism, even if genetically identical
+        return new Genome(this.genes);
     }
 
     // Get a human-readable summary of this genome
