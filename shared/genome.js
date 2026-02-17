@@ -4,7 +4,7 @@ import { SokobanGenerator } from './generator.js';
 // Represents the "DNA" of a level generator that can evolve through selection
 
 export class Genome {
-    constructor(genes = null) {
+    constructor(genes = null, id = null) {
         if (genes) {
             this.genes = { ...genes };
             // Backward compatibility: backfill style genes for old genomes
@@ -24,6 +24,12 @@ export class Genome {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
         }
+        // Unique ID for lineage tracking (preserved through clone/serialize)
+        this._id = id || Genome._newId();
+    }
+
+    static _newId() {
+        return Math.random().toString(36).slice(2, 8);
     }
 
     // Generate random genes within valid ranges
@@ -171,7 +177,7 @@ export class Genome {
 
     // Create a copy of this genome
     clone() {
-        return new Genome(this.genes);
+        return new Genome(this.genes, this._id);
     }
 
     // Get a human-readable summary of this genome
@@ -208,13 +214,14 @@ export class Genome {
     // Serialize to JSON
     toJSON() {
         return {
-            genes: this.genes
+            genes: this.genes,
+            _id: this._id
         };
     }
 
     // Deserialize from JSON
     static fromJSON(json) {
-        return new Genome(json.genes);
+        return new Genome(json.genes, json._id || null);
     }
 }
 
@@ -224,10 +231,19 @@ export class Population {
         this.genomes = [];
         this.generation = 0;
         this.history = [];
+        this.lineage = []; // Array of lineage records for family tree
 
-        // Initialize with random genomes
+        // Initialize with random genomes, record as Gen 0
         for (let i = 0; i < size; i++) {
-            this.genomes.push(new Genome());
+            const g = new Genome();
+            this.genomes.push(g);
+            this.lineage.push({
+                id: g._id,
+                generation: 0,
+                parentIds: [],
+                isWildCard: false,
+                isElite: false
+            });
         }
     }
 
@@ -370,6 +386,35 @@ export class Population {
         this.genomes = nextGen;
         this.generation++;
 
+        // Record lineage for family tree
+        const nextGenNum = this.generation;
+        this.lineage.push({
+            id: eliteClone._id,
+            generation: nextGenNum,
+            parentIds: [champion._id],
+            isWildCard: false,
+            isElite: true
+        });
+        for (const rec of offspringRecords) {
+            if (rec.parent1Genome === null) {
+                this.lineage.push({
+                    id: rec.genome._id,
+                    generation: nextGenNum,
+                    parentIds: [],
+                    isWildCard: true,
+                    isElite: false
+                });
+            } else {
+                this.lineage.push({
+                    id: rec.genome._id,
+                    generation: nextGenNum,
+                    parentIds: [rec.parent1Genome._id, rec.parent2Genome._id].filter((v, i, a) => a.indexOf(v) === i),
+                    isWildCard: false,
+                    isElite: false
+                });
+            }
+        }
+
         return {
             generation: this.generation,
             elite: { genome: eliteClone, parentGenome: champion },
@@ -441,7 +486,8 @@ export class Population {
         return {
             genomes: this.genomes.map(g => g.toJSON()),
             generation: this.generation,
-            history: this.history
+            history: this.history,
+            lineage: this.lineage
         };
     }
 
@@ -451,6 +497,7 @@ export class Population {
         pop.genomes = json.genomes.map(g => Genome.fromJSON(g));
         pop.generation = json.generation;
         pop.history = json.history;
+        pop.lineage = json.lineage || [];
         return pop;
     }
 }

@@ -927,6 +927,149 @@ export class Game {
                 container.appendChild(line);
             }
         }
+
+        // Render family tree
+        this._renderFamilyTree();
+    }
+
+    _renderFamilyTree() {
+        const canvas = document.getElementById('family-tree-canvas');
+        if (!canvas) return;
+
+        const lineage = this.population.lineage;
+        if (!lineage || lineage.length === 0) return;
+
+        // Group by generation
+        const byGen = new Map();
+        for (const rec of lineage) {
+            if (!byGen.has(rec.generation)) byGen.set(rec.generation, []);
+            byGen.get(rec.generation).push(rec);
+        }
+
+        const generations = [...byGen.keys()].sort((a, b) => a - b);
+        // Show last 6 generations to keep it readable
+        const visibleGens = generations.slice(-6);
+
+        const NODE_R = 8;
+        const COL_W = 48;
+        const ROW_H = 52;
+        const PAD_X = 20;
+        const PAD_Y = 20;
+        const LEGEND_H = 20;
+
+        const maxBots = Math.max(...visibleGens.map(g => byGen.get(g).length));
+        const canvasW = Math.max(220, PAD_X * 2 + maxBots * COL_W);
+        const canvasH = PAD_Y * 2 + visibleGens.length * ROW_H + LEGEND_H;
+
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        canvas.style.background = '#111';
+        canvas.style.borderRadius = '6px';
+
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvasW, canvasH);
+
+        // Compute node positions: id → {x, y, color, rec}
+        const nodePos = new Map();
+
+        visibleGens.forEach((gen, rowIdx) => {
+            const bots = byGen.get(gen);
+            const totalW = bots.length * COL_W;
+            const startX = (canvasW - totalW) / 2 + COL_W / 2;
+            const y = PAD_Y + rowIdx * ROW_H;
+
+            bots.forEach((rec, colIdx) => {
+                const x = startX + colIdx * COL_W;
+                const hue = (parseInt(rec.id, 36) * 137) % 360;
+                let color;
+                if (rec.isWildCard) color = `hsl(270, 70%, 65%)`;
+                else if (rec.isElite) color = `hsl(45, 95%, 60%)`;
+                else color = `hsl(${hue}, 65%, 58%)`;
+
+                nodePos.set(rec.id, { x, y, color, rec });
+            });
+        });
+
+        // Draw edges (behind nodes)
+        for (const [id, pos] of nodePos) {
+            const { rec } = pos;
+            if (!rec.parentIds || rec.parentIds.length === 0) continue;
+            for (const pid of rec.parentIds) {
+                const ppos = nodePos.get(pid);
+                if (!ppos) continue;
+                const midY = (ppos.y + pos.y) / 2;
+                ctx.beginPath();
+                ctx.moveTo(ppos.x, ppos.y);
+                ctx.bezierCurveTo(ppos.x, midY, pos.x, midY, pos.x, pos.y);
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([]);
+                ctx.stroke();
+            }
+        }
+
+        // Draw nodes
+        for (const [id, pos] of nodePos) {
+            const { x, y, color, rec } = pos;
+
+            // Glow for elite
+            if (rec.isElite) {
+                ctx.beginPath();
+                ctx.arc(x, y, NODE_R + 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(251,191,36,0.18)';
+                ctx.fill();
+            }
+
+            // Node circle
+            ctx.beginPath();
+            ctx.arc(x, y, NODE_R, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Wild card: dashed ring
+            if (rec.isWildCard) {
+                ctx.beginPath();
+                ctx.arc(x, y, NODE_R + 3, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(167,139,250,0.55)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Elite: star indicator
+            if (rec.isElite) {
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = 'bold 8px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('★', x, y + 3);
+            }
+
+            // Gen label on leftmost node in each row
+            const gen = rec.generation;
+            const rowNodes = [...nodePos.values()].filter(p => p.rec.generation === gen);
+            const leftmost = rowNodes.reduce((a, b) => a.x < b.x ? a : b);
+            if (leftmost === pos) {
+                ctx.fillStyle = '#444';
+                ctx.font = '9px Courier New';
+                ctx.textAlign = 'left';
+                ctx.fillText(`G${gen}`, 2, y + 3);
+            }
+        }
+
+        // Legend
+        const legendY = canvasH - 8;
+        ctx.font = '9px Courier New';
+
+        ctx.beginPath(); ctx.arc(PAD_X, legendY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsl(45,95%,60%)'; ctx.fill();
+        ctx.fillStyle = '#555'; ctx.textAlign = 'left';
+        ctx.fillText('Champion', PAD_X + 8, legendY + 3);
+
+        ctx.beginPath(); ctx.arc(PAD_X + 90, legendY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsl(270,70%,65%)'; ctx.fill();
+        ctx.fillStyle = '#555';
+        ctx.fillText('Wild Card', PAD_X + 98, legendY + 3);
     }
 
     startNextCycle() {
