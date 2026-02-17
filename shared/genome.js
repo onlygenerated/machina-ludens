@@ -240,6 +240,7 @@ export class Population {
             this.genomes.push(g);
             this.lineage.push({
                 id: g._id,
+                name: Bot.generateName(g),
                 generation: 0,
                 parentIds: [],
                 isWildCard: false,
@@ -391,6 +392,7 @@ export class Population {
         const nextGenNum = this.generation;
         this.lineage.push({
             id: eliteClone._id,
+            name: Bot.generateName(eliteClone),
             generation: nextGenNum,
             parentIds: [champion._id],
             isWildCard: false,
@@ -400,6 +402,7 @@ export class Population {
             if (rec.parent1Genome === null) {
                 this.lineage.push({
                     id: rec.genome._id,
+                    name: Bot.generateName(rec.genome),
                     generation: nextGenNum,
                     parentIds: [],
                     isWildCard: true,
@@ -408,6 +411,7 @@ export class Population {
             } else {
                 this.lineage.push({
                     id: rec.genome._id,
+                    name: Bot.generateName(rec.genome),
                     generation: nextGenNum,
                     parentIds: [rec.parent1Genome._id, rec.parent2Genome._id].filter((v, i, a) => a.indexOf(v) === i),
                     isWildCard: false,

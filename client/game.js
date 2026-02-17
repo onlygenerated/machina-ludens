@@ -991,13 +991,16 @@ export class Game {
             }
         });
 
-        // Consistent color per genome id
+        // Consistent color per genome id — returns plain HSL string
         const getColor = (rec) => {
             if (rec.isWildCard) return `hsl(270, 80%, 72%)`;
             if (rec.isElite) return `hsl(45, 100%, 62%)`;
             const hue = (parseInt(rec.id, 36) * 137) % 360;
             return `hsl(${hue}, 70%, 68%)`;
         };
+
+        // Name from stored lineage record (matches Bot names in the Observe list above)
+        const getName = (rec) => rec.name || rec.id;
 
         // Compute node positions
         const nodePos = new Map();
@@ -1023,17 +1026,16 @@ export class Game {
                 const ppos = nodePos.get(pid);
                 if (!ppos) continue;
                 const midY = (ppos.y + pos.y) / 2;
-                // Draw a bright gradient line
-                const grad = ctx.createLinearGradient(ppos.x, ppos.y, pos.x, pos.y);
-                grad.addColorStop(0, ppos.color + 'cc');
-                grad.addColorStop(1, pos.color + 'cc');
+                // Bright line — use globalAlpha since HSL strings can't take hex alpha suffix
+                ctx.globalAlpha = 0.75;
                 ctx.beginPath();
                 ctx.moveTo(ppos.x, ppos.y + NODE_R);
                 ctx.bezierCurveTo(ppos.x, midY, pos.x, midY, pos.x, pos.y - NODE_R);
-                ctx.strokeStyle = grad;
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = pos.color; // child's color
+                ctx.lineWidth = 2.5;
                 ctx.setLineDash([]);
                 ctx.stroke();
+                ctx.globalAlpha = 1.0;
             }
         }
 
@@ -1089,11 +1091,11 @@ export class Game {
                 ctx.textBaseline = 'alphabetic';
             }
 
-            // Name below node
+            // Name below node — same name as shown in Observe list
             ctx.fillStyle = color;
             ctx.font = '8px Courier New';
             ctx.textAlign = 'center';
-            ctx.fillText(rec.id, x, y + NODE_R + 11);
+            ctx.fillText(getName(rec), x, y + NODE_R + 11);
 
             // Gen label at left edge of each row (once per row)
             const rowNodes = [...nodePos.values()].filter(p => p.rec.generation === rec.generation);
