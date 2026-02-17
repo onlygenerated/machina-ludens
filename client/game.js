@@ -654,23 +654,30 @@ export class Game {
         const startIdx = roundIdx * 3;
         this.roundSlots = this.tournamentPool.slice(startIdx, startIdx + 3);
 
-        // Generate levels for each slot
-        for (const slot of this.roundSlots) {
-            slot.bot = new Bot(slot.genome);
-            slot.theme = resolveVisualTheme(slot.genome);
-            slot.completed = false;
+        // Show loading overlay while generating levels
+        const overlay = document.getElementById('round-loading-overlay');
+        if (overlay) overlay.style.display = 'flex';
 
-            const level = slot.genome.generateLevel();
-            slot.levelData = {
-                width: level.width,
-                height: level.height,
-                grid: [...level.grid],
-                playerX: level.playerX,
-                playerY: level.playerY
-            };
-        }
+        // Defer generation to next frame so the overlay paints first
+        setTimeout(() => {
+            for (const slot of this.roundSlots) {
+                slot.bot = new Bot(slot.genome);
+                slot.theme = resolveVisualTheme(slot.genome);
+                slot.completed = false;
 
-        this._renderComparisonView();
+                const level = slot.genome.generateLevel();
+                slot.levelData = {
+                    width: level.width,
+                    height: level.height,
+                    grid: [...level.grid],
+                    playerX: level.playerX,
+                    playerY: level.playerY
+                };
+            }
+
+            if (overlay) overlay.style.display = 'none';
+            this._renderComparisonView();
+        }, 0);
     }
 
     _renderComparisonView() {
@@ -874,24 +881,36 @@ export class Game {
         container.appendChild(champHeader);
         container.appendChild(this._createBotLine(report.elite.genome, 'Survived unchanged'));
 
-        // NEW OFFSPRING section
-        const offspringHeader = document.createElement('div');
-        offspringHeader.textContent = 'NEW OFFSPRING';
-        offspringHeader.style.cssText = 'color: #4ade80; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 4px;';
-        container.appendChild(offspringHeader);
+        // NEW OFFSPRING section (bred from winners only)
+        const bred = report.offspring.filter(r => r.parent1Genome !== null);
+        const wildcards = report.offspring.filter(r => r.parent1Genome === null);
 
-        for (const rec of report.offspring) {
-            let parentLabel;
-            if (rec.parent1Genome === null) {
-                parentLabel = 'Fresh random genome';
-            } else {
+        if (bred.length > 0) {
+            const offspringHeader = document.createElement('div');
+            offspringHeader.textContent = 'NEW OFFSPRING';
+            offspringHeader.style.cssText = 'color: #4ade80; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 4px;';
+            container.appendChild(offspringHeader);
+
+            for (const rec of bred) {
                 const p1 = new Bot(rec.parent1Genome).name;
                 const p2 = new Bot(rec.parent2Genome).name;
-                parentLabel = rec.parent1Genome === rec.parent2Genome
+                const parentLabel = rec.parent1Genome === rec.parent2Genome
                     ? `from ${p1} (self-cross)`
                     : `from ${p1} + ${p2}`;
+                container.appendChild(this._createBotLine(rec.genome, parentLabel));
             }
-            container.appendChild(this._createBotLine(rec.genome, parentLabel));
+        }
+
+        // WILD CARD section (fresh random genome injected for diversity)
+        if (wildcards.length > 0) {
+            const wildcardHeader = document.createElement('div');
+            wildcardHeader.textContent = 'WILD CARD';
+            wildcardHeader.style.cssText = 'color: #a78bfa; font-weight: bold; font-size: 0.85em; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 4px;';
+            container.appendChild(wildcardHeader);
+
+            for (const rec of wildcards) {
+                container.appendChild(this._createBotLine(rec.genome, 'Fresh genome — unknown lineage'));
+            }
         }
 
         // RETIRED section
