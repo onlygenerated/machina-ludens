@@ -658,8 +658,9 @@ export class Game {
         const overlay = document.getElementById('round-loading-overlay');
         if (overlay) overlay.style.display = 'flex';
 
-        // Defer generation to next frame so the overlay paints first
-        setTimeout(() => {
+        // Double rAF ensures the browser actually paints the overlay before
+        // the heavy generation work blocks the main thread
+        const doGenerate = () => {
             for (const slot of this.roundSlots) {
                 slot.bot = new Bot(slot.genome);
                 slot.theme = resolveVisualTheme(slot.genome);
@@ -677,7 +678,9 @@ export class Game {
 
             if (overlay) overlay.style.display = 'none';
             this._renderComparisonView();
-        }, 0);
+        };
+        // Two nested rAFs: first lets the overlay render, second runs generation after paint
+        requestAnimationFrame(() => requestAnimationFrame(doGenerate));
     }
 
     _renderComparisonView() {
@@ -971,7 +974,7 @@ export class Game {
         const LEGEND_H = 26;
 
         const maxBots = Math.max(...visibleGens.map(g => byGen.get(g).length));
-        const canvasW = LABEL_W + maxBots * COL_W + 8;
+        const canvasW = LABEL_W + maxBots * COL_W + 20; // +20 right padding so rightmost node isn't clipped
         const canvasH = PAD_Y + visibleGens.length * ROW_H + LEGEND_H;
 
         canvas.width = canvasW;
