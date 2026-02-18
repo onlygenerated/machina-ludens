@@ -102,9 +102,119 @@ export function resolveVisualTheme(genome) {
     };
 }
 
+// --- Overlay drawing helpers ---
+
+function drawCollectible(ctx, cx, cy, tileSize) {
+    const r = tileSize * 0.2;
+
+    // Glow
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#00e5ff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Diamond shape
+    ctx.fillStyle = '#00e5ff';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r * 0.7, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r * 0.7, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Inner highlight
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.4);
+    ctx.lineTo(cx + r * 0.25, cy);
+    ctx.lineTo(cx, cy + r * 0.15);
+    ctx.lineTo(cx - r * 0.25, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawIce(ctx, px, py, tileSize) {
+    // Semi-transparent blue overlay
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = '#88ccff';
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+
+    // Subtle diagonal lines
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    const step = Math.max(3, tileSize / 4);
+    for (let i = 0; i < tileSize * 2; i += step) {
+        ctx.beginPath();
+        ctx.moveTo(px + i, py);
+        ctx.lineTo(px + i - tileSize, py + tileSize);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    // Small sparkle dots
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#ccefff';
+    const dotR = Math.max(1, tileSize * 0.03);
+    ctx.beginPath(); ctx.arc(px + tileSize * 0.25, py + tileSize * 0.3, dotR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + tileSize * 0.7, py + tileSize * 0.6, dotR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + tileSize * 0.45, py + tileSize * 0.8, dotR, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawExit(ctx, cx, cy, tileSize) {
+    const r = tileSize * 0.35;
+
+    // Outer glow
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Portal ring
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = Math.max(2, tileSize * 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner fill
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Smaller inner ring
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = Math.max(1, tileSize * 0.03);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+}
+
 // --- Standalone grid renderer ---
 
-function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, maxSize) {
+function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, maxSize, overlays = null) {
     const tileSize = Math.max(4, Math.floor(maxSize / Math.max(gridWidth, gridHeight)));
     const canvasW = gridWidth * tileSize;
     const canvasH = gridHeight * tileSize;
@@ -270,6 +380,29 @@ function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, m
         }
     }
 
+    // Draw overlays (collectibles, ice, exit) on top of floor tiles
+    if (overlays) {
+        for (let y = 0; y < gridHeight; y++) {
+            for (let x = 0; x < gridWidth; x++) {
+                const overlay = overlays[y * gridWidth + x];
+                if (overlay === 0) continue;
+
+                const px = x * tileSize;
+                const py = y * tileSize;
+                const cx = px + tileSize / 2;
+                const cy = py + tileSize / 2;
+
+                if (overlay === TILES.COLLECTIBLE) {
+                    drawCollectible(ctx, cx, cy, tileSize);
+                } else if (overlay === TILES.ICE) {
+                    drawIce(ctx, px, py, tileSize);
+                } else if (overlay === TILES.EXIT) {
+                    drawExit(ctx, cx, cy, tileSize);
+                }
+            }
+        }
+    }
+
     // Draw player
     const pcx = playerX * tileSize + tileSize / 2;
     const pcy = playerY * tileSize + tileSize / 2;
@@ -310,6 +443,11 @@ export class Game {
         this.roundSlots = [];
         this.activeLevelIdx = null;  // null=comparison, 0/1/2=playing
         this.tournamentPool = [];    // 15 slot objects
+
+        // Overlay and DNA state
+        this.overlays = null;
+        this.dnaCollected = 0;       // DNA collected this level
+        this.dnaBank = 0;            // Total DNA across all levels
 
         this.setupControls();
         this.setupTouchGestures();
@@ -367,12 +505,16 @@ export class Game {
             this.width = level.width;
             this.height = level.height;
             this.grid = [...level.grid];
+            this.overlays = level.overlays ? [...level.overlays] : null;
             this.playerX = level.playerX;
             this.playerY = level.playerY;
             this.moves = 0;
             this.pushes = 0;
             this.history = [];
             this.won = false;
+            // Undo any DNA collected this level
+            this.dnaBank = Math.max(0, this.dnaBank - this.dnaCollected);
+            this.dnaCollected = 0;
 
             this.updateUI();
             this.render();
@@ -456,10 +598,58 @@ export class Game {
         this.playerY = newY;
         this.setTile(newX, newY, movingToTarget ? TILES.TARGET : TILES.FLOOR);
 
+        // Collect overlay at new position
+        this._collectOverlay();
+
+        // Ice sliding — player slides on ice until hitting obstacle
+        this._handleIceSlide(dx, dy);
+
         this.moves++;
         this.updateUI();
         this.render();
         this.checkWin();
+    }
+
+    _collectOverlay() {
+        if (!this.overlays) return;
+        const idx = this.playerY * this.width + this.playerX;
+        if (this.overlays[idx] === TILES.COLLECTIBLE) {
+            this.overlays[idx] = 0;
+            this.dnaCollected++;
+            this.dnaBank++;
+        }
+    }
+
+    _handleIceSlide(dx, dy) {
+        if (!this.overlays) return;
+
+        let idx = this.playerY * this.width + this.playerX;
+        while (this.overlays[idx] === TILES.ICE) {
+            const slideX = this.playerX + dx;
+            const slideY = this.playerY + dy;
+
+            if (!this.isValid(slideX, slideY)) break;
+
+            const nextTile = this.getTile(slideX, slideY);
+            if (nextTile === TILES.WALL || nextTile === TILES.BOX || nextTile === TILES.BOX_ON_TARGET) break;
+
+            // Leave current ice tile — restore floor (preserve TARGET)
+            const leavingTile = this.getTile(this.playerX, this.playerY);
+            this.setTile(this.playerX, this.playerY, leavingTile === TILES.TARGET ? TILES.TARGET : TILES.FLOOR);
+
+            // Move player to next position
+            this.playerX = slideX;
+            this.playerY = slideY;
+
+            // Set grid at new position (preserve TARGET if present)
+            const isTarget = nextTile === TILES.TARGET;
+            this.setTile(slideX, slideY, isTarget ? TILES.TARGET : TILES.FLOOR);
+
+            // Collect overlay at new position
+            this._collectOverlay();
+
+            idx = this.playerY * this.width + this.playerX;
+        }
     }
 
     undo() {
@@ -467,25 +657,31 @@ export class Game {
 
         const state = this.history.pop();
         this.grid = [...state.grid];
+        this.overlays = state.overlays ? [...state.overlays] : null;
         this.playerX = state.playerX;
         this.playerY = state.playerY;
         this.moves = state.moves;
         this.pushes = state.pushes;
+        // Undo DNA collection
+        const dnaDelta = (this.dnaCollected || 0) - (state.dnaCollected || 0);
+        this.dnaCollected = state.dnaCollected || 0;
+        this.dnaBank = Math.max(0, (this.dnaBank || 0) - dnaDelta);
         this.won = false;
 
         this.updateUI();
         this.render();
-
-        document.getElementById('win-message').textContent = '';
+        this.checkWin();
     }
 
     saveState() {
         this.history.push({
             grid: [...this.grid],
+            overlays: this.overlays ? [...this.overlays] : null,
             playerX: this.playerX,
             playerY: this.playerY,
             moves: this.moves,
-            pushes: this.pushes
+            pushes: this.pushes,
+            dnaCollected: this.dnaCollected || 0
         });
     }
 
@@ -503,15 +699,27 @@ export class Game {
 
     checkWin() {
         const hasLooseBox = this.grid.some(tile => tile === TILES.BOX);
+        if (hasLooseBox) return;
 
-        if (!hasLooseBox) {
-            this.won = true;
-            document.getElementById('win-message').textContent = 'Level Complete!';
-
-            // Mark slot as completed
-            if (this.activeLevelIdx !== null) {
-                this.roundSlots[this.activeLevelIdx].completed = true;
+        // If exit overlay exists, player must be standing on it
+        if (this.overlays) {
+            const hasExit = this.overlays.some(o => o === TILES.EXIT);
+            if (hasExit) {
+                const playerOverlay = this.overlays[this.playerY * this.width + this.playerX];
+                if (playerOverlay !== TILES.EXIT) {
+                    // Show hint that player needs to reach exit
+                    document.getElementById('win-message').textContent = 'All boxes placed! Find the exit...';
+                    return;
+                }
             }
+        }
+
+        this.won = true;
+        document.getElementById('win-message').textContent = 'Level Complete!';
+
+        // Mark slot as completed
+        if (this.activeLevelIdx !== null) {
+            this.roundSlots[this.activeLevelIdx].completed = true;
         }
     }
 
@@ -523,11 +731,15 @@ export class Game {
         document.getElementById('move-count').textContent = this.moves;
         document.getElementById('push-count').textContent = this.pushes;
         document.getElementById('win-message').textContent = '';
+        const dnaEl = document.getElementById('dna-count');
+        if (dnaEl) dnaEl.textContent = this.dnaCollected || 0;
+        const dnaBankEl = document.getElementById('dna-bank-count');
+        if (dnaBankEl) dnaBankEl.textContent = this.dnaBank || 0;
     }
 
     render() {
         const theme = this.currentTheme || DEFAULT_THEME;
-        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS);
+        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays);
     }
 
     // === PHASE STATE MACHINE ===
@@ -654,6 +866,7 @@ export class Game {
                     width: level.width,
                     height: level.height,
                     grid: [...level.grid],
+                    overlays: level.overlays ? [...level.overlays] : null,
                     playerX: level.playerX,
                     playerY: level.playerY
                 };
@@ -689,7 +902,7 @@ export class Game {
             const previewCtx = previewCanvas.getContext('2d');
             renderGrid(previewCtx, slot.levelData.width, slot.levelData.height,
                 slot.levelData.grid, slot.levelData.playerX, slot.levelData.playerY,
-                slot.theme, 180);
+                slot.theme, 180, slot.levelData.overlays);
             card.appendChild(previewCanvas);
 
             // Bot name
@@ -699,12 +912,15 @@ export class Game {
             nameDiv.style.color = slot.bot.colors.primary;
             card.appendChild(nameDiv);
 
-            // Traits line
+            // Traits line with mechanic indicators
             const genes = slot.genome.genes;
             const dominantStyle = slot.genome.getDominantStyle();
             const traitsDiv = document.createElement('div');
             traitsDiv.className = 'preview-traits';
-            traitsDiv.textContent = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
+            let traitText = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
+            if (genes.iceEnabled) traitText += ' \u00b7 Ice';
+            if (genes.exitEnabled) traitText += ' \u00b7 Exit';
+            traitsDiv.textContent = traitText;
             card.appendChild(traitsDiv);
 
             // Origin label (champion / child / wild card / founder)
@@ -773,18 +989,21 @@ export class Game {
         this.width = slot.levelData.width;
         this.height = slot.levelData.height;
         this.grid = [...slot.levelData.grid];
+        this.overlays = slot.levelData.overlays ? [...slot.levelData.overlays] : null;
         this.playerX = slot.levelData.playerX;
         this.playerY = slot.levelData.playerY;
         this.moves = 0;
         this.pushes = 0;
         this.history = [];
         this.won = false;
+        this.dnaCollected = 0;
 
         // Save for reset
         this.generatedLevelData = {
             width: slot.levelData.width,
             height: slot.levelData.height,
             grid: [...slot.levelData.grid],
+            overlays: slot.levelData.overlays ? [...slot.levelData.overlays] : null,
             playerX: slot.levelData.playerX,
             playerY: slot.levelData.playerY
         };
@@ -1145,7 +1364,8 @@ export class Game {
             timestamp: Date.now(),
             averages: stats.averages,
             styleWeights: stats.styleWeights,
-            visualAverages: stats.visualAverages
+            visualAverages: stats.visualAverages,
+            mechanicAverages: stats.mechanicAverages
         });
         this.savePersistentState();
     }
@@ -1154,6 +1374,7 @@ export class Game {
         const state = {
             population: this.population.toJSON(),
             generationHistory: this.generationHistory,
+            dnaBank: this.dnaBank || 0,
             timestamp: Date.now()
         };
         localStorage.setItem('machinaLudensState', JSON.stringify(state));
@@ -1167,8 +1388,9 @@ export class Game {
             const state = JSON.parse(saved);
             this.population = Population.fromJSON(state.population);
             this.generationHistory = state.generationHistory || [];
+            this.dnaBank = state.dnaBank || 0;
 
-            console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries`);
+            console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries, DNA bank: ${this.dnaBank}`);
         } catch (e) {
             console.error('Failed to load saved state:', e);
         }

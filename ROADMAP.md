@@ -13,8 +13,9 @@
 ✅ Evolvable visual genes (palette, tileStyle, decoration)
 ✅ Consistent game piece rendering across phenotypes (fixed colors independent of genome)
 ✅ Tournament-based selection: Choose → Breed → Observe (Phase 2.4)
+✅ Roguelike mechanic overlay system (Phase 3.1a: collectibles, ice, exit)
 
-**Current Phase:** Phase 2 - Bot Population (2.1, 2.2, 2.3, 2.4 complete)
+**Current Phase:** Phase 3 - Mechanic Mutations (3.1a complete: collectibles, ice, exit)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
@@ -77,7 +78,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ---
 
-## Phase 2: Bot Population (IN PROGRESS)
+## Phase 2: Bot Population ✅ COMPLETE
 **Goal:** Add the "bots" layer - agents that explore and curate
 
 ### Milestone 2.1: Bot Identity ✅
@@ -115,26 +116,49 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ---
 
-## Phase 3: Mechanic Mutations (Week 6-7)
-**Goal:** Expand beyond classic Sokoban to rule variations
+## Phase 3: Mechanic Mutations (IN PROGRESS)
+**Goal:** Expand beyond classic Sokoban — roguelike evolution with mechanic discovery
 
-### Milestone 3.1: Grammar Expansion
-- [ ] Add 2-3 special tiles (ice, teleporter, one-way)
-- [ ] Genome includes mechanic preferences (boolean flags)
-- [ ] Solvability verification for new mechanics
-- [ ] Rendering for new tile types
+### Milestone 3.1a: Overlay System & First Mechanics ✅
+- [x] Solution path tracking in generator (reversePlay records all player/box positions)
+- [x] Decorator module (`shared/decorator.js`) places overlays on safe floor tiles
+- [x] DNA Fragment collectibles — glowing pickups on non-solution tiles
+- [x] `collectibleDensity` gene (0-1, controls fragment density)
+- [x] DNA counter in play view, DNA bank in phase bar, persistence across sessions
+- [x] Player-only ice — player slides until hitting wall/box, boxes unaffected
+- [x] `iceEnabled` (binary) + `iceDensity` (0-1) genes
+- [x] Exit tile — after solving all boxes, must reach exit portal to complete level
+- [x] `exitEnabled` (binary) gene
+- [x] Overlay rendering in both preview (180px) and play (600px) modes
+- [x] Undo/redo preserves overlay state and DNA count
+- [x] Backward compatibility for old genomes (auto-backfill new genes)
+- [x] New genes wired into mutation, crossover, affinity, personality, naming
 
-### Milestone 3.2: Rule Mutations
-- [ ] Gravity variations (none, down, pull)
-- [ ] Win condition variations (targets, exit, pattern)
-- [ ] Object interaction rules (merge, chain-react)
+### Milestone 3.1b: Tier System & Dynamic Genes (NEXT)
+- [ ] Gene registry (`shared/gene-registry.js`) with per-gene tier, range, mutation params
+- [ ] DNA accumulation triggers tier-ups (0→50→150 thresholds)
+- [ ] New genes silently registered at value 0 when tier crossed
+- [ ] Wild card genomes roll all available genes (including newly unlocked)
+- [ ] Tier + DNA progress bar in UI
 
-### Milestone 3.3: Genre Emergence
-- [ ] Track which mechanic combinations emerge in evolved populations
-- [ ] Detect "genre clusters" (bots that prefer similar rule sets)
-- [ ] Display genre labels ("ice puzzlers", "teleport chaos", etc.)
+### Milestone 3.2: Vitality & Hazards
+- [ ] Vitality system (3 hearts, lose on hazard, gain on clean solve)
+- [ ] Timed spikes (toggle every N moves, costs 1 vitality)
+- [ ] Death screen when vitality = 0
+- [ ] Patrol enemies (move on fixed paths, boxes block them)
+- [ ] Entity system (`shared/entities.js`)
 
-**Success Criteria:** Evolved populations develop coherent mechanic preferences that feel like distinct genres
+### Milestone 3.3: Forward Solver & Tier 2 Mechanics
+- [ ] BFS forward solver (`shared/solver.js`) with mechanic-aware transitions
+- [ ] Box-ice (boxes also slide), teleporters, keys/doors, one-way gates
+- [ ] Each as unlockable gene pair (enabled + density/count)
+
+### Milestone 3.4: Run Structure & Meta-Persistence
+- [ ] Run state: tournament sequence with vitality, permanent death
+- [ ] Fossil system: best genome from dead run appears as wild card in future runs
+- [ ] Museum of Extinct Civilizations
+
+**Success Criteria:** Evolved populations develop coherent mechanic preferences that feel like distinct genres; roguelike tension from vitality creates meaningful stakes
 
 ---
 
@@ -200,14 +224,16 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 ## Implementation Notes
 
 ### Current Architecture
-- `shared/generator.js`: SokobanGenerator class with reverse-play algorithm
-- `shared/genome.js`: Genome, Population, and Bot classes for evolution
-- `client/game.js`: Game class with tournament loop, canvas rendering, input handling
+- `shared/tiles.js`: TILES enum (FLOOR through EXIT, 9 values — grid tiles 0-5, overlay tiles 6-8)
+- `shared/generator.js`: SokobanGenerator class with reverse-play algorithm + solution path tracking
+- `shared/decorator.js`: Post-generation overlay placement (collectibles, ice, exit) on safe tiles
+- `shared/genome.js`: Genome (15 genes), Population, and Bot classes for evolution
+- `client/game.js`: Game class with tournament loop, canvas rendering, input handling, ice sliding, overlay mechanics
 - `client/main.js`: Entry point, creates Game instance
 - `index.html`: HTML/CSS structure with comparison, play, and observe views
 - Population size: 5 genomes per generation
 - Selection: Tournament (pick best of 3, 5 rounds, population-only pool) → top 3 survive → champion elite + 3 offspring from top 3 + 1 wild card
-- Mutation rate: 20% per gene
+- Mutation rate: 20% per gene (5% for binary mechanic toggles)
 
 ### Key Design Decisions
 1. **Reverse-play generation**: Start with solved state, pull boxes away from targets

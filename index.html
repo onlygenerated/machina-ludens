@@ -90,6 +90,14 @@
             background: #4ade80;
         }
 
+        #dna-bank {
+            margin-left: auto;
+            padding: 6px 12px;
+            font-size: 0.8em;
+            color: #00e5ff;
+            letter-spacing: 0.05em;
+        }
+
         #canvas {
             display: block;
             background: #1a1a1a;
@@ -418,6 +426,7 @@
             <div class="phase-step active">Choose</div>
             <div class="phase-step">Breed</div>
             <div class="phase-step">Observe</div>
+            <div id="dna-bank" title="Total DNA collected">DNA: <span id="dna-bank-count">0</span></div>
         </div>
 
         <!-- Comparison view: 3 level preview cards -->
@@ -435,7 +444,7 @@
         <!-- Play view: expanded single level -->
         <div id="play-view">
             <div id="play-bot-name">-</div>
-            <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span></div>
+            <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span> | <span id="dna-counter" style="color: #00e5ff;">DNA: <span id="dna-count">0</span></span></div>
             <div style="position: relative; display: inline-block;">
                 <canvas id="canvas" width="480" height="480"></canvas>
                 <div id="loading-overlay">
