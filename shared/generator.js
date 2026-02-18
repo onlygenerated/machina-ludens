@@ -179,7 +179,7 @@ export class SokobanGenerator {
         }
 
         // Step 9: Build final grid
-        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
+        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets, state.solutionPath);
     }
 
     // Permissive generation: only checks deadlock, skips spacing/moves.
@@ -203,7 +203,7 @@ export class SokobanGenerator {
         // Require at least 1 box off its target (otherwise puzzle is already solved)
         if (state.boxes.every(b => targets.includes(b))) return null;
 
-        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets);
+        return this.buildFinalGrid(state.grid, state.boxes, state.playerPos, targets, state.solutionPath);
     }
 
     // === WEIGHT-BASED STYLE DISPATCH ===
@@ -1201,6 +1201,13 @@ export class SokobanGenerator {
         const boxSet = new Set(state.boxes);
         const targetSet = new Set(targets);
 
+        // Track solution path — all tiles involved in the puzzle solution.
+        // Safe overlay tiles are FLOOR tiles NOT in this set.
+        const solutionPath = new Set();
+        solutionPath.add(playerPos);
+        for (const box of boxes) solutionPath.add(box);
+        for (const target of targets) solutionPath.add(target);
+
         const moves = [
             [0, -1],  // up
             [0, 1],   // down
@@ -1271,19 +1278,29 @@ export class SokobanGenerator {
                 state.playerPos = playerDest;
                 successfulMoves++;
 
+                // Record solution path positions
+                solutionPath.add(playerDest);
+                solutionPath.add(newBoxPos);
+
                 // Recompute reachability after state changed
                 reachable = this.getPlayerReachable(state.grid, state.playerPos, boxSet);
                 break;
             }
         }
 
+        // Add the player's final reachable area to solution path
+        // (player may need to walk through these tiles to reach push positions)
+        const finalReachable = this.getPlayerReachable(state.grid, state.playerPos, boxSet);
+        for (const pos of finalReachable) solutionPath.add(pos);
+
         console.log(`[SokobanGen] reversePlay: ${successfulMoves}/${this.complexity} moves achieved`);
 
         state.successfulMoves = successfulMoves;
+        state.solutionPath = solutionPath;
         return state;
     }
 
-    buildFinalGrid(grid, boxes, playerPos, targets) {
+    buildFinalGrid(grid, boxes, playerPos, targets, solutionPath = null) {
         const finalGrid = [];
 
         for (let i = 0; i < grid.length; i++) {
@@ -1318,7 +1335,8 @@ export class SokobanGenerator {
             height: this.height,
             grid: finalGrid,
             playerX: playerPos % this.width,
-            playerY: Math.floor(playerPos / this.width)
+            playerY: Math.floor(playerPos / this.width),
+            solutionPath: solutionPath || new Set()
         };
     }
 
@@ -1349,12 +1367,19 @@ export class SokobanGenerator {
         grid[boxIdx] = TILES.BOX;
         grid[playerIdx] = TILES.PLAYER;
 
+        // Fallback levels: mark all non-wall tiles as solution path (no decoration)
+        const solutionPath = new Set();
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] !== TILES.WALL) solutionPath.add(i);
+        }
+
         return {
             width: this.width,
             height: this.height,
             grid: grid,
             playerX: playerX,
-            playerY: playerY
+            playerY: playerY,
+            solutionPath
         };
     }
 

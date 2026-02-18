@@ -1,4 +1,5 @@
 import { SokobanGenerator } from './generator.js';
+import { decorateLevel } from './decorator.js';
 
 // Genome for Sokoban Level Generation
 // Represents the "DNA" of a level generator that can evolve through selection
@@ -19,6 +20,15 @@ export class Genome {
                 this.genes.palette = ((this.genes.gridSize - 7) / 73);
                 this.genes.tileStyle = Math.min(1, this.genes.wallDensity / 0.3);
                 this.genes.decoration = Math.min(1, (this.genes.complexity - 20) / 180);
+            }
+            // Backward compatibility: backfill mechanic genes for old genomes
+            if (this.genes.collectibleDensity === undefined) {
+                this.genes.collectibleDensity = 0.5;
+            }
+            if (this.genes.iceEnabled === undefined) {
+                this.genes.iceEnabled = 0;
+                this.genes.iceDensity = 0;
+                this.genes.exitEnabled = 0;
             }
         } else {
             // Initialize with random genes
@@ -56,7 +66,13 @@ export class Genome {
             // Visual genes
             palette: Math.random(),       // 0-1 circular, controls HSL hue
             tileStyle: Math.random(),     // 0-1 clamped, angular→organic
-            decoration: Math.random()     // 0-1 clamped, minimal→rich
+            decoration: Math.random(),    // 0-1 clamped, minimal→rich
+
+            // Mechanic genes
+            collectibleDensity: 0.3 + Math.random() * 0.5, // 0.3-0.8
+            iceEnabled: Math.random() < 0.5 ? 1 : 0,
+            iceDensity: Math.random() * 0.3,                // 0-0.3
+            exitEnabled: Math.random() < 0.5 ? 1 : 0
         };
     }
 
@@ -92,7 +108,9 @@ export class Genome {
     // Generate a level from this genome
     generateLevel() {
         const generator = this.createGenerator();
-        return generator.generate();
+        const level = generator.generate();
+        decorateLevel(level, this);
+        return level;
     }
 
     // Crossover: create a child genome by mixing two parents
@@ -172,6 +190,27 @@ export class Genome {
             ));
         }
 
+        // Mutate mechanic genes
+        if (Math.random() < mutationRate) {
+            mutated.collectibleDensity = Math.max(0, Math.min(1,
+                mutated.collectibleDensity + (Math.random() - 0.5) * 0.3
+            ));
+        }
+
+        if (Math.random() < 0.05) {
+            mutated.iceEnabled = mutated.iceEnabled ? 0 : 1;
+        }
+
+        if (Math.random() < mutationRate) {
+            mutated.iceDensity = Math.max(0, Math.min(1,
+                mutated.iceDensity + (Math.random() - 0.5) * 0.2
+            ));
+        }
+
+        if (Math.random() < 0.05) {
+            mutated.exitEnabled = mutated.exitEnabled ? 0 : 1;
+        }
+
         return new Genome(mutated);
     }
 
@@ -188,7 +227,7 @@ export class Genome {
         const pct = (v) => total > 0 ? Math.round(v / total * 100) : 25;
         const ts = this.genes.tileStyle;
         const dec = this.genes.decoration;
-        return {
+        const info = {
             'Grid Size': `${this.genes.gridSize}x${this.genes.gridSize}`,
             'Boxes': this.genes.boxCount,
             'Complexity': this.genes.complexity,
@@ -196,8 +235,12 @@ export class Genome {
             'Style': `Clusters ${pct(this.genes.styleClusters)}% / Maze ${pct(this.genes.styleMaze)}% / Caves ${pct(this.genes.styleCaves)}% / Rooms ${pct(this.genes.styleClusteredRooms)}%`,
             'Palette': `${Math.round(this.genes.palette * 360)} deg`,
             'Tile Style': ts < 0.33 ? 'Angular' : ts < 0.66 ? 'Balanced' : 'Organic',
-            'Decoration': dec < 0.33 ? 'Minimal' : dec < 0.66 ? 'Moderate' : 'Rich'
+            'Decoration': dec < 0.33 ? 'Minimal' : dec < 0.66 ? 'Moderate' : 'Rich',
+            'Collectibles': `${(this.genes.collectibleDensity * 100).toFixed(0)}%`
         };
+        if (this.genes.iceEnabled) info['Ice'] = `${(this.genes.iceDensity * 100).toFixed(0)}% density`;
+        if (this.genes.exitEnabled) info['Exit'] = 'Enabled';
+        return info;
     }
 
     // Get the dominant style name from this genome
@@ -429,31 +472,29 @@ export class Population {
     // Get statistics about current population
     getStats() {
         const avgGenes = {
-            gridSize: 0,
-            boxCount: 0,
-            complexity: 0,
-            wallDensity: 0,
-            styleClusters: 0,
-            styleMaze: 0,
-            styleCaves: 0,
-            styleClusteredRooms: 0,
-            palette: 0,
-            tileStyle: 0,
-            decoration: 0
+            gridSize: 0, boxCount: 0, complexity: 0, wallDensity: 0,
+            styleClusters: 0, styleMaze: 0, styleCaves: 0, styleClusteredRooms: 0,
+            palette: 0, tileStyle: 0, decoration: 0,
+            collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, exitEnabled: 0
         };
 
         for (const genome of this.genomes) {
-            avgGenes.gridSize += genome.genes.gridSize;
-            avgGenes.boxCount += genome.genes.boxCount;
-            avgGenes.complexity += genome.genes.complexity;
-            avgGenes.wallDensity += genome.genes.wallDensity;
-            avgGenes.styleClusters += genome.genes.styleClusters;
-            avgGenes.styleMaze += genome.genes.styleMaze;
-            avgGenes.styleCaves += genome.genes.styleCaves;
-            avgGenes.styleClusteredRooms += genome.genes.styleClusteredRooms;
-            avgGenes.palette += genome.genes.palette;
-            avgGenes.tileStyle += genome.genes.tileStyle;
-            avgGenes.decoration += genome.genes.decoration;
+            const g = genome.genes;
+            avgGenes.gridSize += g.gridSize;
+            avgGenes.boxCount += g.boxCount;
+            avgGenes.complexity += g.complexity;
+            avgGenes.wallDensity += g.wallDensity;
+            avgGenes.styleClusters += g.styleClusters;
+            avgGenes.styleMaze += g.styleMaze;
+            avgGenes.styleCaves += g.styleCaves;
+            avgGenes.styleClusteredRooms += g.styleClusteredRooms;
+            avgGenes.palette += g.palette;
+            avgGenes.tileStyle += g.tileStyle;
+            avgGenes.decoration += g.decoration;
+            avgGenes.collectibleDensity += g.collectibleDensity || 0;
+            avgGenes.iceEnabled += g.iceEnabled || 0;
+            avgGenes.iceDensity += g.iceDensity || 0;
+            avgGenes.exitEnabled += g.exitEnabled || 0;
         }
 
         const count = this.genomes.length;
@@ -480,6 +521,12 @@ export class Population {
                 palette: Math.round((avgGenes.palette / count) * 360),
                 tileStyle: (avgGenes.tileStyle / count).toFixed(2),
                 decoration: (avgGenes.decoration / count).toFixed(2)
+            },
+            mechanicAverages: {
+                collectibleDensity: (avgGenes.collectibleDensity / count).toFixed(2),
+                icePercent: Math.round(avgGenes.iceEnabled / count * 100),
+                iceDensity: (avgGenes.iceDensity / count).toFixed(2),
+                exitPercent: Math.round(avgGenes.exitEnabled / count * 100)
             }
         };
     }
@@ -543,7 +590,7 @@ export class Bot {
             'Yuki', 'Zara', 'Betty', 'Max', 'Sam', 'Ruby'
         ];
 
-        // Hash all 11 genes with prime multipliers so small mutations
+        // Hash all 15 genes with prime multipliers so small mutations
         // (e.g. boxCount ±1) produce very different names
         const h = Math.abs(
             genes.gridSize * 7919 +
@@ -556,7 +603,11 @@ export class Bot {
             genes.styleClusteredRooms * 6197 +
             Math.round(genes.palette * 10000) * 8537 +
             Math.round(genes.tileStyle * 10000) * 7331 +
-            Math.round(genes.decoration * 10000) * 9173
+            Math.round(genes.decoration * 10000) * 9173 +
+            Math.round((genes.collectibleDensity || 0) * 10000) * 6337 +
+            (genes.iceEnabled || 0) * 4523 +
+            Math.round((genes.iceDensity || 0) * 10000) * 7129 +
+            (genes.exitEnabled || 0) * 5639
         );
 
         // Use different bits for adjective vs name to decorrelate them
@@ -633,6 +684,21 @@ export class Bot {
             traits.push('draws in warm colors');
         } else if (genes.palette >= 0.4 && genes.palette <= 0.6) {
             traits.push('favors cool tones');
+        }
+
+        // Mechanic-based traits
+        if (genes.collectibleDensity > 0.7) {
+            traits.push('scatters treasures everywhere');
+        } else if (genes.collectibleDensity < 0.15) {
+            traits.push('keeps levels clean');
+        }
+
+        if (genes.iceEnabled && genes.iceDensity > 0.15) {
+            traits.push('loves slippery surfaces');
+        }
+
+        if (genes.exitEnabled) {
+            traits.push('designs escape rooms');
         }
 
         // Return personality string
@@ -773,10 +839,17 @@ export class Bot {
         const tileStyleDiff = Math.abs(myGenes.tileStyle - theirGenes.tileStyle);
         const decorationDiff = Math.abs(myGenes.decoration - theirGenes.decoration);
 
-        // Average over 11 dimensions
+        // Mechanic gene dimensions
+        const collectibleDiff = Math.abs((myGenes.collectibleDensity || 0) - (theirGenes.collectibleDensity || 0));
+        const iceDiff = Math.abs((myGenes.iceEnabled || 0) - (theirGenes.iceEnabled || 0));
+        const iceDensityDiff = Math.abs((myGenes.iceDensity || 0) - (theirGenes.iceDensity || 0));
+        const exitDiff = Math.abs((myGenes.exitEnabled || 0) - (theirGenes.exitEnabled || 0));
+
+        // Average over 15 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
                          clustersDiff + mazeDiff + cavesDiff + roomsDiff +
-                         paletteDiff + tileStyleDiff + decorationDiff) / 11;
+                         paletteDiff + tileStyleDiff + decorationDiff +
+                         collectibleDiff + iceDiff + iceDensityDiff + exitDiff) / 15;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;
