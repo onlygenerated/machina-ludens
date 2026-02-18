@@ -633,8 +633,9 @@ export class Game {
             const nextTile = this.getTile(slideX, slideY);
             if (nextTile === TILES.WALL || nextTile === TILES.BOX || nextTile === TILES.BOX_ON_TARGET) break;
 
-            // Leave current ice tile — restore floor
-            this.setTile(this.playerX, this.playerY, TILES.FLOOR);
+            // Leave current ice tile — restore floor (preserve TARGET)
+            const leavingTile = this.getTile(this.playerX, this.playerY);
+            this.setTile(this.playerX, this.playerY, leavingTile === TILES.TARGET ? TILES.TARGET : TILES.FLOOR);
 
             // Move player to next position
             this.playerX = slideX;
@@ -669,8 +670,7 @@ export class Game {
 
         this.updateUI();
         this.render();
-
-        document.getElementById('win-message').textContent = '';
+        this.checkWin();
     }
 
     saveState() {
@@ -1364,7 +1364,8 @@ export class Game {
             timestamp: Date.now(),
             averages: stats.averages,
             styleWeights: stats.styleWeights,
-            visualAverages: stats.visualAverages
+            visualAverages: stats.visualAverages,
+            mechanicAverages: stats.mechanicAverages
         });
         this.savePersistentState();
     }
