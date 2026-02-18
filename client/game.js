@@ -594,50 +594,33 @@ export class Game {
     }
 
     _buildTournamentPool() {
-        const existingGenomes = [...this.population.getCurrentGeneration()]; // 5 genomes
+        const genomes = [...this.population.getCurrentGeneration()]; // 5 genomes
 
-        // Create 5 newcomer genomes
-        const newcomers = [];
-        for (let i = 0; i < 5; i++) {
-            newcomers.push(new Genome());
-        }
-
-        // Build 15 slots: 5 rounds x 3 per round
-        // Each round: 1 newcomer + 2 existing
-        // Each existing genome appears exactly twice (10 existing slots for 5 genomes)
-        this.tournamentPool = [];
-
-        const existingSlots = [];
-        for (const g of existingGenomes) {
-            existingSlots.push(g);
-            existingSlots.push(g);
-        }
-        // Shuffle existing slots
-        for (let i = existingSlots.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [existingSlots[i], existingSlots[j]] = [existingSlots[j], existingSlots[i]];
-        }
-
-        for (let round = 0; round < 5; round++) {
-            const roundEntries = [];
-
-            // 1 newcomer
-            roundEntries.push({ genome: newcomers[round], isNewcomer: true });
-
-            // 2 existing
-            roundEntries.push({ genome: existingSlots[round * 2], isNewcomer: false });
-            roundEntries.push({ genome: existingSlots[round * 2 + 1], isNewcomer: false });
-
-            // Shuffle within round
-            for (let i = roundEntries.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [roundEntries[i], roundEntries[j]] = [roundEntries[j], roundEntries[i]];
+        // Build 15 slots: each genome appears exactly 3 times across 5 rounds of 3
+        // Rejection-sample to ensure no round has duplicate genomes
+        let rounds;
+        do {
+            const indices = [];
+            for (let i = 0; i < 5; i++) {
+                indices.push(i, i, i); // 3 copies of each index
             }
+            // Shuffle
+            for (let i = indices.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [indices[i], indices[j]] = [indices[j], indices[i]];
+            }
+            // Deal into 5 rounds of 3
+            rounds = [];
+            for (let r = 0; r < 5; r++) {
+                rounds.push(indices.slice(r * 3, r * 3 + 3));
+            }
+        } while (rounds.some(r => new Set(r).size < 3));
 
-            for (const entry of roundEntries) {
+        this.tournamentPool = [];
+        for (const round of rounds) {
+            for (const idx of round) {
                 this.tournamentPool.push({
-                    genome: entry.genome,
-                    isNewcomer: entry.isNewcomer,
+                    genome: genomes[idx],
                     bot: null,
                     theme: null,
                     levelData: null,
@@ -724,13 +707,27 @@ export class Game {
             traitsDiv.textContent = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
             card.appendChild(traitsDiv);
 
-            // NEW badge
-            if (slot.isNewcomer) {
-                const badge = document.createElement('span');
-                badge.className = 'newcomer-badge';
-                badge.textContent = 'NEW';
-                card.appendChild(badge);
+            // Origin label (champion / child / wild card / founder)
+            const lineageRec = this.population.lineage.find(r => r.id === slot.genome._id);
+            let originText, originColor;
+            if (!lineageRec || lineageRec.parentIds.length === 0 && !lineageRec.isWildCard) {
+                originText = 'Founder';
+                originColor = '#9ca3af';
+            } else if (lineageRec.isElite) {
+                originText = '\u2605 Champion';
+                originColor = '#fbbf24';
+            } else if (lineageRec.isWildCard) {
+                originText = 'Wild Card';
+                originColor = '#c4b5fd';
+            } else {
+                originText = 'Child';
+                originColor = '#6ee7b7';
             }
+            const originDiv = document.createElement('div');
+            originDiv.className = 'preview-origin';
+            originDiv.textContent = originText;
+            originDiv.style.color = originColor;
+            card.appendChild(originDiv);
 
             // Completed check (hidden initially)
             const checkDiv = document.createElement('div');
@@ -1001,9 +998,6 @@ export class Game {
             const hue = (parseInt(rec.id, 36) * 137) % 360;
             return `hsl(${hue}, 70%, 68%)`;
         };
-        // Newcomer nodes (won a round but weren't in the original gen) get a dashed ring like wild cards
-        const isNewcomer = (rec) => rec.isNewcomer === true;
-
         // Name from stored lineage record (matches Bot names in the Observe list above)
         const getName = (rec) => rec.name || rec.id;
 
@@ -1080,17 +1074,6 @@ export class Game {
                 ctx.beginPath();
                 ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(192,160,255,0.65)';
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([4, 3]);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-
-            // Newcomer (won a round, late addition to lineage): dashed cyan ring
-            if (isNewcomer(rec)) {
-                ctx.beginPath();
-                ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(78,205,196,0.75)';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([4, 3]);
                 ctx.stroke();

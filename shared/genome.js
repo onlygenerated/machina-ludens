@@ -331,28 +331,23 @@ export class Population {
             genomes: this.genomes.map(g => g.toJSON())
         });
 
-        // Count wins per genome
+        // Count wins per genome (all 5 population genomes, including 0-win ones)
         const winCounts = new Map();
+        for (const g of this.genomes) {
+            winCounts.set(g, 0);
+        }
         for (const g of winnerGenomes) {
             winCounts.set(g, (winCounts.get(g) || 0) + 1);
         }
 
-        // Find champion (most wins, random tiebreaker)
-        let maxWins = 0;
-        const champions = [];
-        for (const [genome, count] of winCounts) {
-            if (count > maxWins) {
-                maxWins = count;
-                champions.length = 0;
-                champions.push(genome);
-            } else if (count === maxWins) {
-                champions.push(genome);
-            }
-        }
-        const champion = champions[Math.floor(Math.random() * champions.length)];
+        // Rank by win count descending, random tiebreaker
+        const ranked = [...winCounts.entries()]
+            .sort((a, b) => b[1] - a[1] || (Math.random() - 0.5));
 
-        // Deduplicate winners into breeding pool
-        const breedingPool = [...winCounts.keys()];
+        // Top 3 survive, bottom 2 eliminated
+        const top3 = ranked.slice(0, 3).map(([g]) => g);
+        const champion = top3[0];
+        const eliminated = ranked.slice(3).map(([g]) => g);
 
         // Build next generation: 1 elite clone + 3 offspring + 1 fresh random
         const nextGen = [];
@@ -361,8 +356,8 @@ export class Population {
 
         const offspringRecords = [];
         while (nextGen.length < 4) {
-            const parent1 = breedingPool[Math.floor(Math.random() * breedingPool.length)];
-            const parent2 = breedingPool[Math.floor(Math.random() * breedingPool.length)];
+            const parent1 = top3[Math.floor(Math.random() * top3.length)];
+            const parent2 = top3[Math.floor(Math.random() * top3.length)];
             const child = Genome.crossover(parent1, parent2);
             const mutated = child.mutate(0.2);
             nextGen.push(mutated);
@@ -373,7 +368,7 @@ export class Population {
             });
         }
 
-        // 1 fresh random genome
+        // 1 fresh random genome (wild card)
         const freshGenome = new Genome();
         nextGen.push(freshGenome);
         offspringRecords.push({
@@ -382,44 +377,13 @@ export class Population {
             parent2Genome: null
         });
 
-        // Determine eliminated = old population genomes not in breeding pool
-        const eliminated = this.genomes.filter(g => !breedingPool.includes(g));
-
         this.genomes = nextGen;
         this.generation++;
 
         // Record lineage for family tree
-        // First, ensure all parents are in lineage (newcomers who won may not be recorded yet)
-        const knownIds = new Set(this.lineage.map(r => r.id));
-        const parentGenNum = this.generation - 1; // the generation they competed in
-        for (const parent of breedingPool) {
-            if (!knownIds.has(parent._id)) {
-                this.lineage.push({
-                    id: parent._id,
-                    name: Bot.generateName(parent),
-                    generation: parentGenNum,
-                    parentIds: [],
-                    isWildCard: false,
-                    isElite: false,
-                    isNewcomer: true
-                });
-                knownIds.add(parent._id);
-            }
-        }
-        // Also ensure champion is registered (it should be, but guard anyway)
-        if (!knownIds.has(champion._id)) {
-            this.lineage.push({
-                id: champion._id,
-                name: Bot.generateName(champion),
-                generation: parentGenNum,
-                parentIds: [],
-                isWildCard: false,
-                isElite: false,
-                isNewcomer: true
-            });
-        }
-
         const nextGenNum = this.generation;
+
+        // Elite clone
         this.lineage.push({
             id: eliteClone._id,
             name: Bot.generateName(eliteClone),
@@ -430,6 +394,7 @@ export class Population {
         });
         for (const rec of offspringRecords) {
             if (rec.parent1Genome === null) {
+                // Wild card (fresh random genome)
                 this.lineage.push({
                     id: rec.genome._id,
                     name: Bot.generateName(rec.genome),
@@ -439,11 +404,14 @@ export class Population {
                     isElite: false
                 });
             } else {
+                // Offspring — parents are always population members
+                const parentIds = [rec.parent1Genome._id, rec.parent2Genome._id]
+                    .filter((v, i, a) => a.indexOf(v) === i);
                 this.lineage.push({
                     id: rec.genome._id,
                     name: Bot.generateName(rec.genome),
                     generation: nextGenNum,
-                    parentIds: [rec.parent1Genome._id, rec.parent2Genome._id].filter((v, i, a) => a.indexOf(v) === i),
+                    parentIds,
                     isWildCard: false,
                     isElite: false
                 });

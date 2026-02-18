@@ -103,10 +103,10 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ### Milestone 2.4: Tournament Selection System ✅
 - [x] Tournament-based "pick best of 3" replacing star ratings
-- [x] 5 rounds per generation, 3 candidates per round (1 newcomer + 2 existing)
-- [x] Comparison view: 3 side-by-side preview cards with bot names, traits, NEW badges
+- [x] 5 rounds per generation, 3 candidates per round (population genomes only, each appears 3x)
+- [x] Comparison view: 3 side-by-side preview cards with bot names and traits
 - [x] Play view: expand any level to full-size with Back/Undo/Reset/Choose controls
-- [x] Winner breeding: champion (most wins) as elite + 3 crossover offspring + 1 fresh random
+- [x] Winner breeding: top 3 by wins survive → champion elite + 3 crossover offspring + 1 wild card
 - [x] `Population.evolveFromWinners()` method for tournament-based breeding
 - [x] Extracted `renderGrid()` for reuse at both preview (180px) and play (600px) scales
 - [x] Simplified phase bar: Choose → Breed → Observe (3 phases, down from 5)
@@ -191,7 +191,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 ## Next Immediate Steps
 
 **Phase 2 complete (including tournament selection).** Next steps:
-- Phase 2 polish: Bot family tree display (Milestone 2.1 remaining item)
+- Phase 2 polish: Improve family tree visual (layout, readability, interaction)
 - Phase 3: Introduce mechanic mutations (special tiles, rule variations)
 - Phase 4: Polish & UX (animations, sound, session structure)
 
@@ -206,7 +206,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - `client/main.js`: Entry point, creates Game instance
 - `index.html`: HTML/CSS structure with comparison, play, and observe views
 - Population size: 5 genomes per generation
-- Selection: Tournament (pick best of 3, 5 rounds) → champion elite + crossover offspring + fresh random
+- Selection: Tournament (pick best of 3, 5 rounds, population-only pool) → top 3 survive → champion elite + 3 offspring from top 3 + 1 wild card
 - Mutation rate: 20% per gene
 
 ### Key Design Decisions
@@ -215,7 +215,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 3. **Tournament selection**: Comparative judgment (pick best of 3) replaces absolute rating (5 stars)
 4. **No pre-solved boxes**: All levels start fully unsolved for consistent difficulty
 5. **Structured obstacles**: Small wall clusters create interesting navigation challenges
-6. **Newcomer injection**: 1 fresh random genome per round + 1 per generation prevents monoculture
+6. **Wild card injection**: 1 fresh random genome per generation prevents monoculture
 
 ### Known Limitations
 - Square grids only (width = height)
@@ -224,4 +224,4 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ---
 
-*Last Updated: 2026-02-15*
+*Last Updated: 2026-02-18*
