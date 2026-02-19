@@ -150,6 +150,20 @@ export const GENE_REGISTRY = [
         min: 0, max: 0.25, defaultValue: 0,
         mutationRate: 0.2, mutationDelta: 0.05,
         randomFn: () => Math.random() * 0.25
+    },
+
+    // --- Tier 3: Patrol enemies ---
+    {
+        name: 'patrolEnabled', tier: 3, type: 'binary',
+        min: 0, max: 1, defaultValue: 0,
+        mutationRate: 0.05, mutationDelta: 0,
+        randomFn: () => Math.random() < 0.5 ? 1 : 0
+    },
+    {
+        name: 'patrolCount', tier: 3, type: 'int',
+        min: 1, max: 3, defaultValue: 1,
+        mutationRate: 0.2, mutationDelta: 1,
+        randomFn: () => 1 + Math.floor(Math.random() * 3)
     }
 ];
 

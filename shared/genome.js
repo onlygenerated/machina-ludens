@@ -36,6 +36,11 @@ export class Genome {
                 this.genes.spikeEnabled = 0;
                 this.genes.spikeDensity = 0;
             }
+            // Backward compatibility: backfill patrol genes for old genomes
+            if (this.genes.patrolEnabled === undefined) {
+                this.genes.patrolEnabled = 0;
+                this.genes.patrolCount = 1;
+            }
         } else {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
@@ -182,6 +187,7 @@ export class Genome {
         if (this.genes.iceEnabled) info['Ice'] = `${(this.genes.iceDensity * 100).toFixed(0)}% density`;
         if (this.genes.exitEnabled) info['Exit'] = 'Enabled';
         if (this.genes.spikeEnabled) info['Spikes'] = `${(this.genes.spikeDensity * 100).toFixed(0)}% density`;
+        if (this.genes.patrolEnabled) info['Patrol'] = `${this.genes.patrolCount} enemies`;
         return info;
     }
 
@@ -418,7 +424,8 @@ export class Population {
             styleClusters: 0, styleMaze: 0, styleCaves: 0, styleClusteredRooms: 0,
             palette: 0, tileStyle: 0, decoration: 0,
             collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, exitEnabled: 0,
-            spikeEnabled: 0, spikeDensity: 0
+            spikeEnabled: 0, spikeDensity: 0,
+            patrolEnabled: 0, patrolCount: 0
         };
 
         for (const genome of this.genomes) {
@@ -440,6 +447,8 @@ export class Population {
             avgGenes.exitEnabled += g.exitEnabled || 0;
             avgGenes.spikeEnabled += g.spikeEnabled || 0;
             avgGenes.spikeDensity += g.spikeDensity || 0;
+            avgGenes.patrolEnabled += g.patrolEnabled || 0;
+            avgGenes.patrolCount += g.patrolCount || 1;
         }
 
         const count = this.genomes.length;
@@ -473,7 +482,9 @@ export class Population {
                 iceDensity: (avgGenes.iceDensity / count).toFixed(2),
                 exitPercent: Math.round(avgGenes.exitEnabled / count * 100),
                 spikePercent: Math.round(avgGenes.spikeEnabled / count * 100),
-                spikeDensity: (avgGenes.spikeDensity / count).toFixed(2)
+                spikeDensity: (avgGenes.spikeDensity / count).toFixed(2),
+                patrolPercent: Math.round(avgGenes.patrolEnabled / count * 100),
+                patrolCount: (avgGenes.patrolCount / count).toFixed(1)
             }
         };
     }
@@ -556,7 +567,9 @@ export class Bot {
             Math.round((genes.iceDensity || 0) * 10000) * 7129 +
             (genes.exitEnabled || 0) * 5639 +
             (genes.spikeEnabled || 0) * 3847 +
-            Math.round((genes.spikeDensity || 0) * 10000) * 6263
+            Math.round((genes.spikeDensity || 0) * 10000) * 6263 +
+            (genes.patrolEnabled || 0) * 5179 +
+            (genes.patrolCount || 1) * 7643
         );
 
         // Use different bits for adjective vs name to decorrelate them
@@ -652,6 +665,10 @@ export class Bot {
 
         if (genes.spikeEnabled && genes.spikeDensity > 0.1) {
             traits.push('lays deadly traps');
+        }
+
+        if (genes.patrolEnabled) {
+            traits.push(genes.patrolCount >= 3 ? 'commands a patrol squad' : 'deploys sentries');
         }
 
         // Return personality string
@@ -799,13 +816,16 @@ export class Bot {
         const exitDiff = Math.abs((myGenes.exitEnabled || 0) - (theirGenes.exitEnabled || 0));
         const spikeDiff = Math.abs((myGenes.spikeEnabled || 0) - (theirGenes.spikeEnabled || 0));
         const spikeDensityDiff = Math.abs((myGenes.spikeDensity || 0) - (theirGenes.spikeDensity || 0)) / 0.25;
+        const patrolDiff = Math.abs((myGenes.patrolEnabled || 0) - (theirGenes.patrolEnabled || 0));
+        const patrolCountDiff = Math.abs((myGenes.patrolCount || 1) - (theirGenes.patrolCount || 1)) / 2; // range 1-3, span 2
 
-        // Average over 17 dimensions
+        // Average over 19 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
                          clustersDiff + mazeDiff + cavesDiff + roomsDiff +
                          paletteDiff + tileStyleDiff + decorationDiff +
                          collectibleDiff + iceDiff + iceDensityDiff + exitDiff +
-                         spikeDiff + spikeDensityDiff) / 17;
+                         spikeDiff + spikeDensityDiff +
+                         patrolDiff + patrolCountDiff) / 19;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;

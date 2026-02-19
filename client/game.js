@@ -2,6 +2,7 @@ import { TILES } from '../shared/tiles.js';
 import { Genome, Population, Bot } from '../shared/genome.js';
 import { LEVELS } from './levels.js';
 import { getTierForDNA, getTierInfo, getNextTierInfo } from '../shared/gene-registry.js';
+import { advanceEntities, checkEntityCollision, cloneEntities } from '../shared/entities.js';
 
 // Game constants
 const MAX_CANVAS = 600;
@@ -209,6 +210,65 @@ function drawSpikes(ctx, px, py, tileSize, active) {
         ctx.closePath();
         ctx.fill();
     }
+    ctx.restore();
+}
+
+function drawPatrolEnemy(ctx, x, y, dx, dy, tileSize) {
+    const px = x * tileSize;
+    const py = y * tileSize;
+    const cx = px + tileSize / 2;
+    const cy = py + tileSize / 2;
+    const r = tileSize * 0.35;
+
+    // Semi-transparent background tint
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#ff6600';
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+
+    // Directional triangle pointing in movement direction
+    ctx.save();
+    ctx.fillStyle = '#ff4422';
+    ctx.globalAlpha = 0.9;
+
+    ctx.beginPath();
+    if (dx === 1) {
+        // Right
+        ctx.moveTo(cx + r, cy);
+        ctx.lineTo(cx - r * 0.6, cy - r * 0.7);
+        ctx.lineTo(cx - r * 0.6, cy + r * 0.7);
+    } else if (dx === -1) {
+        // Left
+        ctx.moveTo(cx - r, cy);
+        ctx.lineTo(cx + r * 0.6, cy - r * 0.7);
+        ctx.lineTo(cx + r * 0.6, cy + r * 0.7);
+    } else if (dy === 1) {
+        // Down
+        ctx.moveTo(cx, cy + r);
+        ctx.lineTo(cx - r * 0.7, cy - r * 0.6);
+        ctx.lineTo(cx + r * 0.7, cy - r * 0.6);
+    } else {
+        // Up
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx - r * 0.7, cy + r * 0.6);
+        ctx.lineTo(cx + r * 0.7, cy + r * 0.6);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Bright outline
+    ctx.strokeStyle = '#ff8844';
+    ctx.lineWidth = Math.max(1, tileSize * 0.04);
+    ctx.stroke();
+    ctx.restore();
+
+    // Inner eye dot
+    ctx.save();
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath();
+    ctx.arc(cx + dx * r * 0.15, cy + dy * r * 0.15, Math.max(1, tileSize * 0.06), 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 }
 
@@ -444,6 +504,13 @@ function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, m
         }
     }
 
+    // Draw entities (patrol enemies)
+    if (options.entities) {
+        for (const e of options.entities) {
+            drawPatrolEnemy(ctx, e.x, e.y, e.dx, e.dy, tileSize);
+        }
+    }
+
     // Draw player
     const pcx = playerX * tileSize + tileSize / 2;
     const pcy = playerY * tileSize + tileSize / 2;
@@ -499,6 +566,9 @@ export class Game {
         this.spikePhase = 0;         // 0=safe, 1=active
         this.spikeMoveCounter = 0;
         this.spikeToggleInterval = 3;
+
+        // Entity state (patrol enemies)
+        this.entities = [];
 
         this.setupControls();
         this.setupTouchGestures();
@@ -578,6 +648,11 @@ export class Game {
             // Reset spike state
             this.spikePhase = 0;
             this.spikeMoveCounter = 0;
+
+            // Reset entities to starting positions
+            this.entities = this.generatedLevelData.entities
+                ? cloneEntities(this.generatedLevelData.entities)
+                : [];
 
             this.updateUI();
             this.render();
@@ -673,6 +748,17 @@ export class Game {
         this._advanceSpikePhase();
         this._checkSpikeDamage();
 
+        // Entity collision: player walked into enemy?
+        this._checkEntityDamage();
+
+        // Advance patrol entities
+        if (this.entities.length > 0) {
+            advanceEntities(this.entities, this.grid, this.width, this.height);
+        }
+
+        // Entity collision: enemy walked into player?
+        this._checkEntityDamage();
+
         this.updateUI();
         this.render();
 
@@ -731,6 +817,9 @@ export class Game {
             // Check for spike damage at each slide position
             this._checkSpikeDamage();
 
+            // Check for entity collision at each slide position
+            this._checkEntityDamage();
+
             idx = this.playerY * this.width + this.playerX;
         }
     }
@@ -754,6 +843,13 @@ export class Game {
         if (!this.overlays || this.spikePhase !== 1) return;
         const idx = this.playerY * this.width + this.playerX;
         if (this.overlays[idx] === TILES.SPIKES) {
+            this._takeDamage(1);
+        }
+    }
+
+    _checkEntityDamage() {
+        if (this.entities.length === 0) return;
+        if (checkEntityCollision(this.entities, this.playerX, this.playerY)) {
             this._takeDamage(1);
         }
     }
@@ -829,6 +925,8 @@ export class Game {
         this.spikeMoveCounter = state.spikeMoveCounter || 0;
         this.vitality = state.vitality !== undefined ? state.vitality : this.vitality;
         this.damageTakenThisLevel = state.damageTakenThisLevel || false;
+        // Restore entities
+        this.entities = state.entities ? cloneEntities(state.entities) : [];
         this.won = false;
 
         this.updateUI();
@@ -848,7 +946,8 @@ export class Game {
             spikePhase: this.spikePhase,
             spikeMoveCounter: this.spikeMoveCounter,
             vitality: this.vitality,
-            damageTakenThisLevel: this.damageTakenThisLevel
+            damageTakenThisLevel: this.damageTakenThisLevel,
+            entities: cloneEntities(this.entities)
         });
     }
 
@@ -946,7 +1045,7 @@ export class Game {
 
     render() {
         const theme = this.currentTheme || DEFAULT_THEME;
-        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, { spikePhase: this.spikePhase });
+        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, { spikePhase: this.spikePhase, entities: this.entities });
     }
 
     // === PHASE STATE MACHINE ===
@@ -1075,7 +1174,8 @@ export class Game {
                     grid: [...level.grid],
                     overlays: level.overlays ? [...level.overlays] : null,
                     playerX: level.playerX,
-                    playerY: level.playerY
+                    playerY: level.playerY,
+                    entities: level.entities ? cloneEntities(level.entities) : []
                 };
             }
 
@@ -1109,7 +1209,7 @@ export class Game {
             const previewCtx = previewCanvas.getContext('2d');
             renderGrid(previewCtx, slot.levelData.width, slot.levelData.height,
                 slot.levelData.grid, slot.levelData.playerX, slot.levelData.playerY,
-                slot.theme, 180, slot.levelData.overlays);
+                slot.theme, 180, slot.levelData.overlays, { entities: slot.levelData.entities });
             card.appendChild(previewCanvas);
 
             // Bot name
@@ -1128,6 +1228,7 @@ export class Game {
             if (genes.iceEnabled) traitText += ' \u00b7 Ice';
             if (genes.exitEnabled) traitText += ' \u00b7 Exit';
             if (genes.spikeEnabled) traitText += ' \u00b7 Spikes';
+            if (genes.patrolEnabled) traitText += ' \u00b7 Patrol';
             traitsDiv.textContent = traitText;
             card.appendChild(traitsDiv);
 
@@ -1208,6 +1309,9 @@ export class Game {
         this.damageTakenThisLevel = false;
         this.spikePhase = 0;
         this.spikeMoveCounter = 0;
+        this.entities = slot.levelData.entities
+            ? cloneEntities(slot.levelData.entities)
+            : [];
 
         // Save for reset
         this.generatedLevelData = {
@@ -1216,7 +1320,10 @@ export class Game {
             grid: [...slot.levelData.grid],
             overlays: slot.levelData.overlays ? [...slot.levelData.overlays] : null,
             playerX: slot.levelData.playerX,
-            playerY: slot.levelData.playerY
+            playerY: slot.levelData.playerY,
+            entities: slot.levelData.entities
+                ? cloneEntities(slot.levelData.entities)
+                : []
         };
 
         // Update play view bot info

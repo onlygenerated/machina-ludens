@@ -1,4 +1,5 @@
 import { TILES } from './tiles.js';
+import { placePatrolEntities } from './entities.js';
 
 /**
  * Post-generation level decorator.
@@ -18,6 +19,9 @@ export function decorateLevel(level, genome) {
 
     // Initialize overlays array (same length as grid, 0 = empty)
     level.overlays = new Array(level.grid.length).fill(0);
+
+    // Initialize entities array
+    level.entities = [];
 
     // Two pools of eligible tiles
     const allFloor = getAllFloorTiles(level);
@@ -41,6 +45,11 @@ export function decorateLevel(level, genome) {
     // Place spikes if enabled — on any floor tile
     if (genes.spikeEnabled) {
         placeSpikes(level, allFloor, genes.spikeDensity || 0);
+    }
+
+    // Place patrol enemies if enabled
+    if (genes.patrolEnabled) {
+        level.entities = placePatrolEntities(level, genes);
     }
 }
 
