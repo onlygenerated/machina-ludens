@@ -9,8 +9,7 @@ const MAX_CANVAS = 600;
 
 const PHASES = Object.freeze({
     CHOOSE: 'CHOOSE',
-    BREED: 'BREED',
-    OBSERVE: 'OBSERVE'
+    BREED: 'BREED'
 });
 
 export function getTileSize(w, h) {
@@ -757,7 +756,7 @@ export class Game {
         // Phase state
         this.phase = PHASES.CHOOSE;
 
-        // Population (tier 1 initially; loadState may override)
+        // Population (tier 1 initially)
         this.population = new Population(5, 1);
         this.generationHistory = [];
         this.lastBreedingReport = null;
@@ -797,9 +796,6 @@ export class Game {
 
         this.setupControls();
         this.setupTouchGestures();
-
-        // Load persisted state (DNA bank, population, vitality)
-        this.loadState();
 
         // Start the phase loop
         this.startTournament();
@@ -1253,7 +1249,6 @@ export class Game {
         this.population = new Population(5, this.currentTier);
         this.generationHistory = [];
         this.lastBreedingReport = null;
-        localStorage.removeItem('machinaLudensState');
         this.startTournament();
     }
 
@@ -1592,7 +1587,7 @@ export class Game {
 
         // Update phase bar highlights
         const steps = document.querySelectorAll('.phase-step');
-        const order = [PHASES.CHOOSE, PHASES.BREED, PHASES.OBSERVE];
+        const order = [PHASES.CHOOSE, PHASES.BREED];
         const currentIdx = order.indexOf(phase);
         steps.forEach((step, i) => {
             step.classList.remove('active', 'completed');
@@ -1626,7 +1621,7 @@ export class Game {
                     comparisonView.style.display = 'block';
                 }
                 break;
-            case PHASES.OBSERVE:
+            case PHASES.BREED:
                 observeView.style.display = 'block';
                 break;
         }
@@ -1922,7 +1917,7 @@ export class Game {
         this.saveGenerationHistory();
 
         this._populateObserveOverlay();
-        this.setPhase(PHASES.OBSERVE);
+        this.setPhase(PHASES.BREED);
     }
 
     // === OBSERVE OVERLAY ===
@@ -2225,8 +2220,6 @@ export class Game {
         this.startTournament();
     }
 
-    // === PERSISTENCE & EXPERIMENT TOOLS ===
-
     saveGenerationHistory() {
         const stats = this.population.getStats();
         this.generationHistory.push({
@@ -2237,40 +2230,10 @@ export class Game {
             visualAverages: stats.visualAverages,
             mechanicAverages: stats.mechanicAverages
         });
-        this.savePersistentState();
-    }
-
-    savePersistentState() {
-        const state = {
-            population: this.population.toJSON(),
-            generationHistory: this.generationHistory,
-            dnaBank: this.dnaBank || 0,
-            vitality: this.vitality,
-            timestamp: Date.now()
-        };
-        localStorage.setItem('machinaLudensState', JSON.stringify(state));
-    }
-
-    loadState() {
-        try {
-            const saved = localStorage.getItem('machinaLudensState');
-            if (!saved) return;
-
-            const state = JSON.parse(saved);
-            this.population = Population.fromJSON(state.population);
-            this.generationHistory = state.generationHistory || [];
-            this.dnaBank = state.dnaBank || 0;
-            if (state.vitality !== undefined) this.vitality = state.vitality;
-
-            console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries, DNA bank: ${this.dnaBank}, Tier: ${this.currentTier}`);
-        } catch (e) {
-            console.error('Failed to load saved state:', e);
-        }
     }
 
     clearState() {
         if (confirm('Clear all evolution history and restart? This cannot be undone.')) {
-            localStorage.removeItem('machinaLudensState');
             this.dnaBank = 0;
             this.vitality = 3;
             this.population = new Population(5, this.currentTier);
@@ -2279,166 +2242,4 @@ export class Game {
         }
     }
 
-    exportHistory() {
-        const data = {
-            generationHistory: this.generationHistory,
-            currentGeneration: this.population.generation,
-            exportDate: new Date().toISOString()
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `machina-ludens-history-gen${this.population.generation}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
-    toggleHistoryView() {
-        const historyView = document.getElementById('history-view');
-        if (historyView.style.display === 'none') {
-            historyView.style.display = 'block';
-            this.renderHistoryTable();
-        } else {
-            historyView.style.display = 'none';
-        }
-    }
-
-    renderHistoryTable() {
-        const content = document.getElementById('history-content');
-
-        if (this.generationHistory.length === 0) {
-            content.textContent = 'No generation history yet. Breed your first generation to start tracking!';
-            content.style.cssText = 'color: #666; font-style: italic;';
-            return;
-        }
-        content.style.cssText = '';
-
-        // Build table using DOM methods
-        const table = document.createElement('table');
-        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 0.85em;';
-
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        headerRow.style.borderBottom = '1px solid #444';
-        const headers = ['Gen', 'Grid', 'Boxes', 'Complex', 'Density', 'Style', 'Palette', 'Tile', 'Decor'];
-        for (const h of headers) {
-            const th = document.createElement('th');
-            th.style.cssText = `padding: 5px; text-align: ${h === 'Gen' ? 'left' : 'right'}; color: #aaa;`;
-            th.textContent = h;
-            headerRow.appendChild(th);
-        }
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        const colors = ['#e0e0e0', '#4ade80', '#60a5fa', '#fbbf24', '#f87171', '#a78bfa', '#f0abfc', '#f0abfc', '#f0abfc'];
-
-        for (const entry of this.generationHistory) {
-            let styleLabel = '-';
-            if (entry.styleWeights) {
-                const sw = entry.styleWeights;
-                const styles = [
-                    { name: 'Clusters', pct: sw.clusters },
-                    { name: 'Maze', pct: sw.maze },
-                    { name: 'Caves', pct: sw.caves },
-                    { name: 'Rooms', pct: sw.clusteredRooms }
-                ].sort((a, b) => b.pct - a.pct);
-                styleLabel = `${styles[0].name} ${styles[0].pct}%`;
-            }
-            const va = entry.visualAverages || {};
-            const paletteLabel = va.palette !== undefined ? `${va.palette}\u00b0` : '-';
-            const tileLabel = va.tileStyle !== undefined
-                ? (va.tileStyle < 0.33 ? 'Ang' : va.tileStyle < 0.66 ? 'Bal' : 'Org')
-                : '-';
-            const decorLabel = va.decoration !== undefined
-                ? (va.decoration < 0.33 ? 'Min' : va.decoration < 0.66 ? 'Mod' : 'Rich')
-                : '-';
-
-            const row = document.createElement('tr');
-            row.style.borderBottom = '1px solid #333';
-            const values = [
-                entry.generation, entry.averages.gridSize, entry.averages.boxCount,
-                entry.averages.complexity, entry.averages.wallDensity,
-                styleLabel, paletteLabel, tileLabel, decorLabel
-            ];
-            for (let ci = 0; ci < values.length; ci++) {
-                const td = document.createElement('td');
-                td.style.cssText = `padding: 5px; text-align: ${ci === 0 ? 'left' : 'right'}; color: ${colors[ci]};`;
-                td.textContent = values[ci];
-                row.appendChild(td);
-            }
-            tbody.appendChild(row);
-        }
-
-        table.appendChild(tbody);
-
-        // Clear and append
-        while (content.firstChild) {
-            content.removeChild(content.firstChild);
-        }
-        content.appendChild(table);
-    }
-
-    saveExperiment() {
-        const experimentName = prompt('Name this experiment (e.g., "Large Board Culture", "Dense Maze Preference"):', `Experiment-Gen${this.population.generation}`);
-        if (!experimentName) return;
-
-        const data = {
-            experimentName: experimentName,
-            population: this.population.toJSON(),
-            generationHistory: this.generationHistory,
-            savedDate: new Date().toISOString(),
-            currentGeneration: this.population.generation
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${experimentName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        alert(`Experiment "${experimentName}" saved!\n\nYou can load this file later to continue the experiment.`);
-    }
-
-    loadExperiment(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = JSON.parse(e.target.result);
-
-                if (!data.population || !data.generationHistory) {
-                    alert('Invalid experiment file format!');
-                    return;
-                }
-
-                if (this.population.generation > 0 || this.generationHistory.length > 0) {
-                    if (!confirm('Loading this experiment will replace your current progress. Continue?')) {
-                        return;
-                    }
-                }
-
-                this.population = Population.fromJSON(data.population);
-                this.generationHistory = data.generationHistory;
-
-                this.savePersistentState();
-
-                alert(`Experiment "${data.experimentName || 'Unnamed'}" loaded!\n\nGeneration: ${this.population.generation}\nHistory entries: ${this.generationHistory.length}`);
-
-                this.startTournament();
-            } catch (err) {
-                alert('Failed to load experiment: ' + err.message);
-                console.error(err);
-            }
-        };
-        reader.readAsText(file);
-
-        event.target.value = '';
-    }
 }

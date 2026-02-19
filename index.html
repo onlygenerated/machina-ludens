@@ -560,7 +560,6 @@
         <div id="phase-bar">
             <div class="phase-step active">Choose</div>
             <div class="phase-step">Breed</div>
-            <div class="phase-step">Observe</div>
             <div id="dna-bank" title="Total DNA collected">DNA: <span id="dna-bank-count">0</span></div>
             <div id="tier-display" title="Current tier and progress">
                 <span id="tier-name">Primordial</span>
@@ -636,19 +635,8 @@
             </div>
         </div>
 
-        <div id="experiment-controls" style="margin-top: 15px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
-            <div style="margin-bottom: 10px; color: #888; font-size: 0.85em;">Experiment Tools</div>
-            <button onclick="game.toggleHistoryView()" style="background: #3a4a5a; border-color: #5a6a7a;">&#x1F4CA; View History</button>
-            <button onclick="game.exportHistory()" style="background: #3a5a4a; border-color: #5a7a6a;">&#x1F4BE; Export Data</button>
-            <button onclick="game.saveExperiment()" style="background: #4a3a5a; border-color: #6a5a7a;">&#x1F4BE; Save Experiment</button>
-            <button onclick="document.getElementById('load-file').click()" style="background: #3a5a5a; border-color: #5a7a7a;">&#x1F4C2; Load Experiment</button>
+        <div style="margin-top: 15px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
             <button onclick="game.clearState()" style="background: #5a3a3a; border-color: #7a5a5a;">&#x1F5D1;&#xFE0F; Clear &amp; Restart</button>
-            <input type="file" id="load-file" accept=".json" style="display: none;" onchange="game.loadExperiment(event)">
-        </div>
-
-        <div id="history-view" style="display: none; margin-top: 15px; padding: 15px; background: #1a1a1a; border-radius: 6px; max-height: 300px; overflow-y: auto;">
-            <h3 style="margin: 0 0 10px 0; font-size: 1em; color: #aaa;">Generation History</h3>
-            <div id="history-content"></div>
         </div>
     </div>
 
