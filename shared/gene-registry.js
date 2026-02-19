@@ -132,6 +132,12 @@ export const GENE_REGISTRY = [
         randomFn: () => Math.random() * 0.3
     },
     {
+        name: 'boxIceEnabled', tier: 2, type: 'binary',
+        min: 0, max: 1, defaultValue: 0,
+        mutationRate: 0.05, mutationDelta: 0,
+        randomFn: () => Math.random() < 0.3 ? 1 : 0
+    },
+    {
         name: 'exitEnabled', tier: 2, type: 'binary',
         min: 0, max: 1, defaultValue: 0,
         mutationRate: 0.05, mutationDelta: 0,

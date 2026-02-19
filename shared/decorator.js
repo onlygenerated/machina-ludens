@@ -32,10 +32,18 @@ export function decorateLevel(level, genome) {
     // Place collectibles (DNA fragments) — on any floor tile
     placeCollectibles(level, allFloor, genes.collectibleDensity || 0);
 
-    // Place ice if enabled — only on non-solution-path tiles (affects movement)
+    // Place ice if enabled
+    // Box-ice: use allFloor tiles (solver verification ensures solvability)
+    // Regular ice: only on non-solution-path tiles (affects player movement)
     if (genes.iceEnabled) {
-        placeIce(level, safeTiles.length > 0 ? safeTiles : allFloor, genes.iceDensity || 0);
+        const icePool = (genes.boxIceEnabled)
+            ? (allFloor.length > 0 ? allFloor : safeTiles)
+            : (safeTiles.length > 0 ? safeTiles : allFloor);
+        placeIce(level, icePool, genes.iceDensity || 0);
     }
+
+    // Set box-ice flag on level for game loop
+    level.boxIceEnabled = !!(genes.iceEnabled && genes.boxIceEnabled);
 
     // Place exit if enabled — on any floor tile (far from player)
     if (genes.exitEnabled) {

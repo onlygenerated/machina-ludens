@@ -1,6 +1,7 @@
 import { SokobanGenerator } from './generator.js';
 import { decorateLevel } from './decorator.js';
 import { GENE_REGISTRY, GENE_MAP, getLockedGenes } from './gene-registry.js';
+import { solve } from './solver.js';
 
 // Genome for Sokoban Level Generation
 // Represents the "DNA" of a level generator that can evolve through selection
@@ -30,6 +31,10 @@ export class Genome {
                 this.genes.iceEnabled = 0;
                 this.genes.iceDensity = 0;
                 this.genes.exitEnabled = 0;
+            }
+            // Backward compatibility: backfill box-ice gene
+            if (this.genes.boxIceEnabled === undefined) {
+                this.genes.boxIceEnabled = 0;
             }
             // Backward compatibility: backfill spike genes for old genomes
             if (this.genes.spikeEnabled === undefined) {
@@ -99,7 +104,63 @@ export class Genome {
     generateLevel() {
         const generator = this.createGenerator();
         const level = generator.generate();
+
+        // Box-ice levels need solver verification
+        if (this.genes.iceEnabled && this.genes.boxIceEnabled) {
+            return this._generateBoxIceLevel(level, generator);
+        }
+
         decorateLevel(level, this);
+        return level;
+    }
+
+    // Generate a solver-verified box-ice level
+    _generateBoxIceLevel(level, generator) {
+        // Large grids make solver BFS too expensive — skip verification
+        // and just decorate normally (base level is solvable via reverse-play,
+        // ice placement is sparse and rarely blocks all paths)
+        if (this.genes.gridSize > 20) {
+            decorateLevel(level, this);
+            return level;
+        }
+
+        // Scale maxStates down for medium grids to keep generation snappy
+        const area = this.genes.gridSize * this.genes.gridSize;
+        const maxStates = area > 200 ? 10000 : 30000;
+
+        const maxAttempts = 5;
+        let lastReason = '';
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            // Re-decorate each attempt (fresh ice placement)
+            const tryLevel = {
+                width: level.width,
+                height: level.height,
+                grid: [...level.grid],
+                playerX: level.playerX,
+                playerY: level.playerY,
+                solutionPath: level.solutionPath
+            };
+            decorateLevel(tryLevel, this);
+
+            const result = solve(tryLevel, { boxIceEnabled: true, maxStates });
+
+            if (result.solvable) {
+                return tryLevel;
+            }
+
+            lastReason = result.reason;
+
+            // If solver hit state limit on last attempt, accept it (probably solvable, just complex)
+            if (attempt === maxAttempts - 1 && result.reason === 'exceeded_limit') {
+                return tryLevel;
+            }
+        }
+
+        // All attempts failed — fallback: decorate without box-ice
+        console.log(`[Genome] Box-ice solver failed (${lastReason}), falling back to ice-only`);
+        const fallbackGenome = { genes: { ...this.genes, boxIceEnabled: 0 } };
+        decorateLevel(level, { genes: fallbackGenome.genes });
         return level;
     }
 
@@ -184,7 +245,7 @@ export class Genome {
             'Decoration': dec < 0.33 ? 'Minimal' : dec < 0.66 ? 'Moderate' : 'Rich',
             'Collectibles': `${(this.genes.collectibleDensity * 100).toFixed(0)}%`
         };
-        if (this.genes.iceEnabled) info['Ice'] = `${(this.genes.iceDensity * 100).toFixed(0)}% density`;
+        if (this.genes.iceEnabled) info['Ice'] = `${(this.genes.iceDensity * 100).toFixed(0)}% density` + (this.genes.boxIceEnabled ? ' (boxes slide too)' : '');
         if (this.genes.exitEnabled) info['Exit'] = 'Enabled';
         if (this.genes.spikeEnabled) info['Spikes'] = `${(this.genes.spikeDensity * 100).toFixed(0)}% density`;
         if (this.genes.patrolEnabled) info['Patrol'] = `${this.genes.patrolCount} enemies`;
@@ -423,7 +484,7 @@ export class Population {
             gridSize: 0, boxCount: 0, complexity: 0, wallDensity: 0,
             styleClusters: 0, styleMaze: 0, styleCaves: 0, styleClusteredRooms: 0,
             palette: 0, tileStyle: 0, decoration: 0,
-            collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, exitEnabled: 0,
+            collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, boxIceEnabled: 0, exitEnabled: 0,
             spikeEnabled: 0, spikeDensity: 0,
             patrolEnabled: 0, patrolCount: 0
         };
@@ -444,6 +505,7 @@ export class Population {
             avgGenes.collectibleDensity += g.collectibleDensity || 0;
             avgGenes.iceEnabled += g.iceEnabled || 0;
             avgGenes.iceDensity += g.iceDensity || 0;
+            avgGenes.boxIceEnabled += g.boxIceEnabled || 0;
             avgGenes.exitEnabled += g.exitEnabled || 0;
             avgGenes.spikeEnabled += g.spikeEnabled || 0;
             avgGenes.spikeDensity += g.spikeDensity || 0;
@@ -480,6 +542,7 @@ export class Population {
                 collectibleDensity: (avgGenes.collectibleDensity / count).toFixed(2),
                 icePercent: Math.round(avgGenes.iceEnabled / count * 100),
                 iceDensity: (avgGenes.iceDensity / count).toFixed(2),
+                boxIcePercent: Math.round(avgGenes.boxIceEnabled / count * 100),
                 exitPercent: Math.round(avgGenes.exitEnabled / count * 100),
                 spikePercent: Math.round(avgGenes.spikeEnabled / count * 100),
                 spikeDensity: (avgGenes.spikeDensity / count).toFixed(2),
@@ -565,6 +628,7 @@ export class Bot {
             Math.round((genes.collectibleDensity || 0) * 10000) * 6337 +
             (genes.iceEnabled || 0) * 4523 +
             Math.round((genes.iceDensity || 0) * 10000) * 7129 +
+            (genes.boxIceEnabled || 0) * 8293 +
             (genes.exitEnabled || 0) * 5639 +
             (genes.spikeEnabled || 0) * 3847 +
             Math.round((genes.spikeDensity || 0) * 10000) * 6263 +
@@ -655,7 +719,9 @@ export class Bot {
             traits.push('keeps levels clean');
         }
 
-        if (genes.iceEnabled && genes.iceDensity > 0.15) {
+        if (genes.iceEnabled && genes.boxIceEnabled) {
+            traits.push('makes everything slide');
+        } else if (genes.iceEnabled && genes.iceDensity > 0.15) {
             traits.push('loves slippery surfaces');
         }
 
@@ -813,19 +879,20 @@ export class Bot {
         const collectibleDiff = Math.abs((myGenes.collectibleDensity || 0) - (theirGenes.collectibleDensity || 0));
         const iceDiff = Math.abs((myGenes.iceEnabled || 0) - (theirGenes.iceEnabled || 0));
         const iceDensityDiff = Math.abs((myGenes.iceDensity || 0) - (theirGenes.iceDensity || 0));
+        const boxIceDiff = Math.abs((myGenes.boxIceEnabled || 0) - (theirGenes.boxIceEnabled || 0));
         const exitDiff = Math.abs((myGenes.exitEnabled || 0) - (theirGenes.exitEnabled || 0));
         const spikeDiff = Math.abs((myGenes.spikeEnabled || 0) - (theirGenes.spikeEnabled || 0));
         const spikeDensityDiff = Math.abs((myGenes.spikeDensity || 0) - (theirGenes.spikeDensity || 0)) / 0.25;
         const patrolDiff = Math.abs((myGenes.patrolEnabled || 0) - (theirGenes.patrolEnabled || 0));
         const patrolCountDiff = Math.abs((myGenes.patrolCount || 1) - (theirGenes.patrolCount || 1)) / 2; // range 1-3, span 2
 
-        // Average over 19 dimensions
+        // Average over 20 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
                          clustersDiff + mazeDiff + cavesDiff + roomsDiff +
                          paletteDiff + tileStyleDiff + decorationDiff +
-                         collectibleDiff + iceDiff + iceDensityDiff + exitDiff +
+                         collectibleDiff + iceDiff + iceDensityDiff + boxIceDiff + exitDiff +
                          spikeDiff + spikeDensityDiff +
-                         patrolDiff + patrolCountDiff) / 19;
+                         patrolDiff + patrolCountDiff) / 20;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;

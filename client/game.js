@@ -653,6 +653,7 @@ export class Game {
             this.entities = this.generatedLevelData.entities
                 ? cloneEntities(this.generatedLevelData.entities)
                 : [];
+            this.boxIceEnabled = !!this.generatedLevelData.boxIceEnabled;
 
             this.updateUI();
             this.render();
@@ -725,6 +726,11 @@ export class Game {
             const isOnTarget = boxTargetTile === TILES.TARGET;
             this.setTile(boxNewX, boxNewY, isOnTarget ? TILES.BOX_ON_TARGET : TILES.BOX);
             this.pushes++;
+
+            // Box-ice: if box landed on ice, slide it further
+            if (this.boxIceEnabled) {
+                this._handleBoxIceSlide(boxNewX, boxNewY, dx, dy);
+            }
         }
 
         const wasOnTarget = this.getTile(this.playerX, this.playerY) === TILES.TARGET;
@@ -821,6 +827,35 @@ export class Game {
             this._checkEntityDamage();
 
             idx = this.playerY * this.width + this.playerX;
+        }
+    }
+
+    _handleBoxIceSlide(boxX, boxY, dx, dy) {
+        if (!this.overlays) return;
+
+        let idx = boxY * this.width + boxX;
+        while (this.overlays[idx] === TILES.ICE) {
+            const nextX = boxX + dx;
+            const nextY = boxY + dy;
+
+            // Out of bounds — stop
+            if (!this.isValid(nextX, nextY)) break;
+
+            const nextTile = this.getTile(nextX, nextY);
+            // Wall or another box — stop
+            if (nextTile === TILES.WALL || nextTile === TILES.BOX || nextTile === TILES.BOX_ON_TARGET) break;
+
+            // Clear old box tile (restore FLOOR or TARGET)
+            const oldTile = this.getTile(boxX, boxY);
+            this.setTile(boxX, boxY, oldTile === TILES.BOX_ON_TARGET ? TILES.TARGET : TILES.FLOOR);
+
+            // Set new box tile (BOX or BOX_ON_TARGET based on destination)
+            const destIsTarget = nextTile === TILES.TARGET;
+            this.setTile(nextX, nextY, destIsTarget ? TILES.BOX_ON_TARGET : TILES.BOX);
+
+            boxX = nextX;
+            boxY = nextY;
+            idx = boxY * this.width + boxX;
         }
     }
 
@@ -1175,7 +1210,8 @@ export class Game {
                     overlays: level.overlays ? [...level.overlays] : null,
                     playerX: level.playerX,
                     playerY: level.playerY,
-                    entities: level.entities ? cloneEntities(level.entities) : []
+                    entities: level.entities ? cloneEntities(level.entities) : [],
+                    boxIceEnabled: !!level.boxIceEnabled
                 };
             }
 
@@ -1225,7 +1261,7 @@ export class Game {
             const traitsDiv = document.createElement('div');
             traitsDiv.className = 'preview-traits';
             let traitText = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
-            if (genes.iceEnabled) traitText += ' \u00b7 Ice';
+            if (genes.iceEnabled) traitText += genes.boxIceEnabled ? ' \u00b7 Box-Ice' : ' \u00b7 Ice';
             if (genes.exitEnabled) traitText += ' \u00b7 Exit';
             if (genes.spikeEnabled) traitText += ' \u00b7 Spikes';
             if (genes.patrolEnabled) traitText += ' \u00b7 Patrol';
@@ -1312,6 +1348,7 @@ export class Game {
         this.entities = slot.levelData.entities
             ? cloneEntities(slot.levelData.entities)
             : [];
+        this.boxIceEnabled = !!slot.levelData.boxIceEnabled;
 
         // Save for reset
         this.generatedLevelData = {
@@ -1323,7 +1360,8 @@ export class Game {
             playerY: slot.levelData.playerY,
             entities: slot.levelData.entities
                 ? cloneEntities(slot.levelData.entities)
-                : []
+                : [],
+            boxIceEnabled: !!slot.levelData.boxIceEnabled
         };
 
         // Update play view bot info
