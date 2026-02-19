@@ -124,8 +124,8 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ### Milestone 3.1a: Overlay System & First Mechanics ✅
 - [x] Solution path tracking in generator (reversePlay records all player/box positions)
-- [x] Decorator module (`shared/decorator.js`) places overlays on safe floor tiles
-- [x] DNA Fragment collectibles — glowing pickups on non-solution tiles
+- [x] Decorator module (`shared/decorator.js`) places overlays on floor tiles (two pools: all-floor for collectibles/spikes/exit, safe-only for ice)
+- [x] DNA Fragment collectibles — glowing pickups on any floor tile
 - [x] `collectibleDensity` gene (0-1, controls fragment density)
 - [x] DNA counter in play view, DNA bank in phase bar, persistence across sessions
 - [x] Player-only ice — player slides until hitting wall/box, boxes unaffected
@@ -238,7 +238,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - `shared/tiles.js`: TILES enum (FLOOR through SPIKES, 10 values — grid tiles 0-5, overlay tiles 6-9)
 - `shared/generator.js`: SokobanGenerator class with reverse-play algorithm + solution path tracking
 - `shared/gene-registry.js`: Gene registry with tier thresholds, per-gene definitions, tier helpers
-- `shared/decorator.js`: Post-generation overlay placement (collectibles, ice, exit, spikes) on safe tiles
+- `shared/decorator.js`: Post-generation overlay placement — two tile pools: all-floor (collectibles, spikes, exit) and safe-only (ice)
 - `shared/genome.js`: Genome (17 genes), Population, and Bot classes for evolution (tier-aware)
 - `client/game.js`: Game class with tournament loop, canvas rendering, input handling, ice sliding, spike mechanics, vitality system, tier progression, death/extinction
 - `client/main.js`: Entry point, creates Game instance
