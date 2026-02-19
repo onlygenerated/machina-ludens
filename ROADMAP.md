@@ -19,8 +19,9 @@
 ✅ Patrol enemies with entity system (Phase 3.2 complete: patrol entities, bounce at walls/boxes/entities)
 ✅ State persistence — DNA bank, population, and vitality survive page reloads
 ✅ Forward BFS solver with box-ice support (Phase 3.3 partial: solver, box-ice mechanic)
+✅ Teleporters, one-way gates, keys/doors (Phase 3.3 complete)
 
-**Current Phase:** Phase 3 - Mechanic Mutations (3.3 partial — solver + box-ice done)
+**Current Phase:** Phase 3 - Mechanic Mutations (3.3 complete)
 
 ## Vision
 AI bots that evolve cultural preferences for puzzle design through genetic algorithms, creating a co-evolutionary loop between player and AI population.
@@ -160,13 +161,15 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - [x] Patrol enemies (move on fixed paths, boxes block them)
 - [x] Entity system (`shared/entities.js`)
 
-### Milestone 3.3: Forward Solver & Tier 2 Mechanics (PARTIAL)
+### Milestone 3.3: Forward Solver & Tier 2/3 Mechanics ✅
 - [x] BFS forward solver (`shared/solver.js`) with player normalization, deadlock pruning, box-ice support
 - [x] Box-ice mechanic: boxes slide on ice tiles until hitting wall/box/non-ice floor
 - [x] `boxIceEnabled` gene (binary, Tier 2) — only active when `iceEnabled` is also 1
 - [x] Solver-verified generation: box-ice levels decorated, solver-checked, retry up to 5x, fallback to ice-only
-- [ ] Teleporters, keys/doors, one-way gates
-- [ ] Each remaining mechanic as unlockable gene pair (enabled + density/count)
+- [x] Teleporters (Tier 2): paired portals, solver-aware floodFill, anti-bounce flag, distinct pair colors
+- [x] One-way gates (Tier 3): directional entry restriction, corridor-aware placement, solver/ice-slide aware
+- [x] Keys/doors (Tier 3): chokepoint door placement, BFS-verified key reachability, inventory undo, pair colors
+- [x] All 3 mechanics wired into: gene-registry (6 new genes), decorator (3 placement functions), solver (teleporter+gate), genome (backward compat, describe, personality, name, affinity 26-dim), game (rendering, gameplay, state, undo)
 
 ### Milestone 3.4: Run Structure & Meta-Persistence
 - [ ] Run state: tournament sequence with vitality, permanent death
@@ -229,8 +232,7 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 
 ## Next Immediate Steps
 
-**Phase 3.3 partial (forward solver + box-ice complete).** Next steps:
-- Phase 3.3 continued: Teleporters, keys/doors, one-way gates
+**Phase 3.3 complete (teleporters, gates, keys/doors).** Next steps:
 - Phase 3.4: Run structure + meta-persistence (fossils, museum)
 - Phase 4: Polish & UX (animations, sound, session structure)
 
@@ -239,20 +241,20 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 ## Implementation Notes
 
 ### Current Architecture
-- `shared/tiles.js`: TILES enum (FLOOR through SPIKES, 10 values — grid tiles 0-5, overlay tiles 6-9)
+- `shared/tiles.js`: TILES enum (FLOOR through DOOR, 17 values — grid tiles 0-5, overlay tiles 6-16)
 - `shared/generator.js`: SokobanGenerator class with reverse-play algorithm + solution path tracking
-- `shared/gene-registry.js`: Gene registry with tier thresholds, per-gene definitions, tier helpers
-- `shared/decorator.js`: Post-generation overlay placement — two tile pools: all-floor (collectibles, spikes, exit) and safe-only (ice); entity placement for patrols
+- `shared/gene-registry.js`: Gene registry (26 genes) with tier thresholds, per-gene definitions, tier helpers
+- `shared/decorator.js`: Post-generation overlay placement — two tile pools: all-floor (collectibles, spikes, exit) and safe-only (ice, gates); teleporter pairs, key/door pairs, entity placement for patrols
 - `shared/entities.js`: Entity system — placement, movement, collision detection, cloning for patrol enemies
-- `shared/solver.js`: Forward BFS solver with player normalization, deadlock pruning, box-ice slide support
-- `shared/genome.js`: Genome (20 genes), Population, and Bot classes for evolution (tier-aware, solver-verified box-ice)
-- `client/game.js`: Game class with tournament loop, canvas rendering, input handling, ice sliding, box-ice sliding, spike mechanics, vitality system, tier progression, death/extinction
+- `shared/solver.js`: Forward BFS solver with player normalization, deadlock pruning, box-ice slide support, teleporter-aware floodFill, gate-aware movement/push validation
+- `shared/genome.js`: Genome (26 genes), Population, and Bot classes for evolution (tier-aware, solver-verified box-ice, 26-dimension affinity)
+- `client/game.js`: Game class with tournament loop, canvas rendering, input handling, ice sliding, box-ice sliding, teleporter handling, gate blocking, key/door inventory, spike mechanics, vitality system, tier progression, death/extinction
 - `client/main.js`: Entry point, creates Game instance
 - `index.html`: HTML/CSS structure with comparison, play, and observe views
 - Population size: 5 genomes per generation
 - Selection: Tournament (pick best of 3, 5 rounds, population-only pool) → top 3 survive → champion elite + 3 offspring from top 3 + 1 wild card
 - Mutation rate: per-gene (defined in gene-registry.js; 20% for most, 5% for binary toggles)
-- Tier system: Tier 1 (0 DNA) = Sokoban + collectibles, Tier 2 (50 DNA) = ice/box-ice/exit, Tier 3 (150 DNA) = spikes + patrol enemies
+- Tier system: Tier 1 (0 DNA) = Sokoban + collectibles, Tier 2 (50 DNA) = ice/box-ice/exit/teleporters, Tier 3 (150 DNA) = spikes + patrol + gates + keys/doors
 - Vitality: 3 starting hearts, max 5, +0.5 on clean solve, -1 on active spike, death at 0
 
 ### Key Design Decisions

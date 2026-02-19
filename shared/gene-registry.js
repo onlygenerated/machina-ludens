@@ -143,6 +143,18 @@ export const GENE_REGISTRY = [
         mutationRate: 0.05, mutationDelta: 0,
         randomFn: () => Math.random() < 0.5 ? 1 : 0
     },
+    {
+        name: 'teleporterEnabled', tier: 2, type: 'binary',
+        min: 0, max: 1, defaultValue: 0,
+        mutationRate: 0.05, mutationDelta: 0,
+        randomFn: () => Math.random() < 0.5 ? 1 : 0
+    },
+    {
+        name: 'teleporterCount', tier: 2, type: 'int',
+        min: 1, max: 3, defaultValue: 1,
+        mutationRate: 0.2, mutationDelta: 1,
+        randomFn: () => 1 + Math.floor(Math.random() * 3)
+    },
 
     // --- Tier 3: Spikes ---
     {
@@ -170,6 +182,34 @@ export const GENE_REGISTRY = [
         min: 1, max: 3, defaultValue: 1,
         mutationRate: 0.2, mutationDelta: 1,
         randomFn: () => 1 + Math.floor(Math.random() * 3)
+    },
+
+    // --- Tier 3: One-way gates ---
+    {
+        name: 'gateEnabled', tier: 3, type: 'binary',
+        min: 0, max: 1, defaultValue: 0,
+        mutationRate: 0.05, mutationDelta: 0,
+        randomFn: () => Math.random() < 0.5 ? 1 : 0
+    },
+    {
+        name: 'gateDensity', tier: 3, type: 'float',
+        min: 0, max: 0.15, defaultValue: 0,
+        mutationRate: 0.2, mutationDelta: 0.03,
+        randomFn: () => Math.random() * 0.15
+    },
+
+    // --- Tier 3: Keys & Doors ---
+    {
+        name: 'keyDoorEnabled', tier: 3, type: 'binary',
+        min: 0, max: 1, defaultValue: 0,
+        mutationRate: 0.05, mutationDelta: 0,
+        randomFn: () => Math.random() < 0.5 ? 1 : 0
+    },
+    {
+        name: 'keyDoorCount', tier: 3, type: 'int',
+        min: 1, max: 2, defaultValue: 1,
+        mutationRate: 0.2, mutationDelta: 1,
+        randomFn: () => 1 + Math.floor(Math.random() * 2)
     }
 ];
 

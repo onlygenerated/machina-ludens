@@ -46,6 +46,21 @@ export class Genome {
                 this.genes.patrolEnabled = 0;
                 this.genes.patrolCount = 1;
             }
+            // Backward compatibility: backfill teleporter genes
+            if (this.genes.teleporterEnabled === undefined) {
+                this.genes.teleporterEnabled = 0;
+                this.genes.teleporterCount = 1;
+            }
+            // Backward compatibility: backfill gate genes
+            if (this.genes.gateEnabled === undefined) {
+                this.genes.gateEnabled = 0;
+                this.genes.gateDensity = 0;
+            }
+            // Backward compatibility: backfill key/door genes
+            if (this.genes.keyDoorEnabled === undefined) {
+                this.genes.keyDoorEnabled = 0;
+                this.genes.keyDoorCount = 1;
+            }
         } else {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
@@ -249,6 +264,9 @@ export class Genome {
         if (this.genes.exitEnabled) info['Exit'] = 'Enabled';
         if (this.genes.spikeEnabled) info['Spikes'] = `${(this.genes.spikeDensity * 100).toFixed(0)}% density`;
         if (this.genes.patrolEnabled) info['Patrol'] = `${this.genes.patrolCount} enemies`;
+        if (this.genes.teleporterEnabled) info['Teleporters'] = `${this.genes.teleporterCount} pair${this.genes.teleporterCount > 1 ? 's' : ''}`;
+        if (this.genes.gateEnabled) info['Gates'] = `${(this.genes.gateDensity * 100).toFixed(0)}% density`;
+        if (this.genes.keyDoorEnabled) info['Keys/Doors'] = `${this.genes.keyDoorCount} pair${this.genes.keyDoorCount > 1 ? 's' : ''}`;
         return info;
     }
 
@@ -486,7 +504,10 @@ export class Population {
             palette: 0, tileStyle: 0, decoration: 0,
             collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, boxIceEnabled: 0, exitEnabled: 0,
             spikeEnabled: 0, spikeDensity: 0,
-            patrolEnabled: 0, patrolCount: 0
+            patrolEnabled: 0, patrolCount: 0,
+            teleporterEnabled: 0, teleporterCount: 0,
+            gateEnabled: 0, gateDensity: 0,
+            keyDoorEnabled: 0, keyDoorCount: 0
         };
 
         for (const genome of this.genomes) {
@@ -511,6 +532,12 @@ export class Population {
             avgGenes.spikeDensity += g.spikeDensity || 0;
             avgGenes.patrolEnabled += g.patrolEnabled || 0;
             avgGenes.patrolCount += g.patrolCount || 1;
+            avgGenes.teleporterEnabled += g.teleporterEnabled || 0;
+            avgGenes.teleporterCount += g.teleporterCount || 1;
+            avgGenes.gateEnabled += g.gateEnabled || 0;
+            avgGenes.gateDensity += g.gateDensity || 0;
+            avgGenes.keyDoorEnabled += g.keyDoorEnabled || 0;
+            avgGenes.keyDoorCount += g.keyDoorCount || 1;
         }
 
         const count = this.genomes.length;
@@ -547,7 +574,13 @@ export class Population {
                 spikePercent: Math.round(avgGenes.spikeEnabled / count * 100),
                 spikeDensity: (avgGenes.spikeDensity / count).toFixed(2),
                 patrolPercent: Math.round(avgGenes.patrolEnabled / count * 100),
-                patrolCount: (avgGenes.patrolCount / count).toFixed(1)
+                patrolCount: (avgGenes.patrolCount / count).toFixed(1),
+                teleporterPercent: Math.round(avgGenes.teleporterEnabled / count * 100),
+                teleporterCount: (avgGenes.teleporterCount / count).toFixed(1),
+                gatePercent: Math.round(avgGenes.gateEnabled / count * 100),
+                gateDensity: (avgGenes.gateDensity / count).toFixed(2),
+                keyDoorPercent: Math.round(avgGenes.keyDoorEnabled / count * 100),
+                keyDoorCount: (avgGenes.keyDoorCount / count).toFixed(1)
             }
         };
     }
@@ -633,7 +666,13 @@ export class Bot {
             (genes.spikeEnabled || 0) * 3847 +
             Math.round((genes.spikeDensity || 0) * 10000) * 6263 +
             (genes.patrolEnabled || 0) * 5179 +
-            (genes.patrolCount || 1) * 7643
+            (genes.patrolCount || 1) * 7643 +
+            (genes.teleporterEnabled || 0) * 4271 +
+            (genes.teleporterCount || 1) * 8861 +
+            (genes.gateEnabled || 0) * 6427 +
+            Math.round((genes.gateDensity || 0) * 10000) * 3191 +
+            (genes.keyDoorEnabled || 0) * 7517 +
+            (genes.keyDoorCount || 1) * 5843
         );
 
         // Use different bits for adjective vs name to decorrelate them
@@ -735,6 +774,18 @@ export class Bot {
 
         if (genes.patrolEnabled) {
             traits.push(genes.patrolCount >= 3 ? 'commands a patrol squad' : 'deploys sentries');
+        }
+
+        if (genes.teleporterEnabled) {
+            traits.push('connects distant places');
+        }
+
+        if (genes.gateEnabled) {
+            traits.push('builds one-way streets');
+        }
+
+        if (genes.keyDoorEnabled) {
+            traits.push('hides keys in clever places');
         }
 
         // Return personality string
@@ -885,14 +936,23 @@ export class Bot {
         const spikeDensityDiff = Math.abs((myGenes.spikeDensity || 0) - (theirGenes.spikeDensity || 0)) / 0.25;
         const patrolDiff = Math.abs((myGenes.patrolEnabled || 0) - (theirGenes.patrolEnabled || 0));
         const patrolCountDiff = Math.abs((myGenes.patrolCount || 1) - (theirGenes.patrolCount || 1)) / 2; // range 1-3, span 2
+        const teleporterDiff = Math.abs((myGenes.teleporterEnabled || 0) - (theirGenes.teleporterEnabled || 0));
+        const teleporterCountDiff = Math.abs((myGenes.teleporterCount || 1) - (theirGenes.teleporterCount || 1)) / 2; // range 1-3, span 2
+        const gateDiff = Math.abs((myGenes.gateEnabled || 0) - (theirGenes.gateEnabled || 0));
+        const gateDensityDiff = Math.abs((myGenes.gateDensity || 0) - (theirGenes.gateDensity || 0)) / 0.15;
+        const keyDoorDiff = Math.abs((myGenes.keyDoorEnabled || 0) - (theirGenes.keyDoorEnabled || 0));
+        const keyDoorCountDiff = Math.abs((myGenes.keyDoorCount || 1) - (theirGenes.keyDoorCount || 1)); // range 1-2, span 1
 
-        // Average over 20 dimensions
+        // Average over 26 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
                          clustersDiff + mazeDiff + cavesDiff + roomsDiff +
                          paletteDiff + tileStyleDiff + decorationDiff +
                          collectibleDiff + iceDiff + iceDensityDiff + boxIceDiff + exitDiff +
                          spikeDiff + spikeDensityDiff +
-                         patrolDiff + patrolCountDiff) / 20;
+                         patrolDiff + patrolCountDiff +
+                         teleporterDiff + teleporterCountDiff +
+                         gateDiff + gateDensityDiff +
+                         keyDoorDiff + keyDoorCountDiff) / 26;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;

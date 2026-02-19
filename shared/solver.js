@@ -21,7 +21,7 @@ export function solve(level, options = {}) {
     const puzzle = extractPuzzleData(level);
     if (!puzzle) return { solvable: false, reason: 'invalid_level' };
 
-    const { walls, targets, boxes, playerPos, iceTiles, exitPos, width, height } = puzzle;
+    const { walls, targets, boxes, playerPos, iceTiles, exitPos, teleporterMap, gates, doors, width, height } = puzzle;
 
     // Quick check: if no boxes and no targets, level is trivially solvable
     if (boxes.length === 0 && targets.size === 0) {
@@ -30,7 +30,7 @@ export function solve(level, options = {}) {
 
     // Initial state
     const initialBoxSet = new Set(boxes);
-    const initialReachable = floodFill(playerPos, walls, initialBoxSet, width, height);
+    const initialReachable = floodFill(playerPos, walls, initialBoxSet, width, height, teleporterMap, gates, doors);
     const initialCanonical = Math.min(...initialReachable);
     const initialBoxKey = [...initialBoxSet].sort((a, b) => a - b);
 
@@ -81,14 +81,18 @@ export function solve(level, options = {}) {
 
                 const pushToPos = pushToY * width + pushToX;
 
-                // Push-to must be free (not wall, not another box)
+                // Push-to must be free (not wall, not another box, not locked door)
                 if (walls.has(pushToPos)) continue;
                 if (boxSet.has(pushToPos)) continue;
+                if (doors.has(pushToPos)) continue;
+
+                // Gate check: box can't enter a gate that blocks this push direction
+                if (gates.has(pushToPos) && !gateAllowsDirection(gates.get(pushToPos), dx, dy)) continue;
 
                 // Resolve box-ice slide if enabled
                 let finalBoxPos = pushToPos;
                 if (boxIceEnabled) {
-                    finalBoxPos = resolveBoxSlide(pushToPos, dx, dy, walls, iceTiles, boxSet, width, height);
+                    finalBoxPos = resolveBoxSlide(pushToPos, dx, dy, walls, iceTiles, boxSet, width, height, gates);
                 }
 
                 // Check deadlock at final position
@@ -104,7 +108,7 @@ export function solve(level, options = {}) {
 
                 // Compute new reachable area
                 const newBoxSet = new Set(sortedBoxes);
-                const newReachable = floodFill(newPlayerPos, walls, newBoxSet, width, height);
+                const newReachable = floodFill(newPlayerPos, walls, newBoxSet, width, height, teleporterMap, gates, doors);
                 const newCanonical = Math.min(...newReachable);
 
                 const key = stateKey(newCanonical, sortedBoxes);
@@ -170,68 +174,93 @@ function extractPuzzleData(level) {
     }
 
     // Extract overlay data
+    const gates = new Map();
+    const doors = new Set();
     if (level.overlays) {
         for (let i = 0; i < level.overlays.length; i++) {
             if (level.overlays[i] === TILES.ICE) {
                 iceTiles.add(i);
             } else if (level.overlays[i] === TILES.EXIT) {
                 exitPos = i;
+            } else if (level.overlays[i] >= TILES.GATE_UP && level.overlays[i] <= TILES.GATE_LEFT) {
+                gates.set(i, level.overlays[i]);
+            } else if (level.overlays[i] === TILES.DOOR) {
+                doors.add(i);
             }
         }
     }
 
-    return { walls, targets, boxes, playerPos, iceTiles, exitPos, width, height };
+    // Build teleporter map from pairs
+    const teleporterMap = new Map();
+    if (level.teleporterPairs) {
+        for (const [a, b] of level.teleporterPairs) {
+            teleporterMap.set(a, b);
+            teleporterMap.set(b, a);
+        }
+    }
+
+    return { walls, targets, boxes, playerPos, iceTiles, exitPos, teleporterMap, gates, doors, width, height };
 }
 
 /**
  * BFS flood fill from startPos, blocked by walls and boxes.
  * Returns Set of reachable positions.
  */
-function floodFill(startPos, walls, boxSet, width, height) {
+function floodFill(startPos, walls, boxSet, width, height, teleporterMap, gates, doors) {
     const reachable = new Set([startPos]);
     const queue = [startPos];
     let head = 0;
+
+    const directions = [[0, -1, -width], [0, 1, width], [-1, 0, -1], [1, 0, 1]];
 
     while (head < queue.length) {
         const cur = queue[head++];
         const cx = cur % width;
         const cy = Math.floor(cur / width);
 
-        // Up
-        if (cy > 0) {
-            const n = cur - width;
-            if (!reachable.has(n) && !walls.has(n) && !boxSet.has(n)) {
-                reachable.add(n);
-                queue.push(n);
-            }
-        }
-        // Down
-        if (cy < height - 1) {
-            const n = cur + width;
-            if (!reachable.has(n) && !walls.has(n) && !boxSet.has(n)) {
-                reachable.add(n);
-                queue.push(n);
-            }
-        }
-        // Left
-        if (cx > 0) {
-            const n = cur - 1;
-            if (!reachable.has(n) && !walls.has(n) && !boxSet.has(n)) {
-                reachable.add(n);
-                queue.push(n);
-            }
-        }
-        // Right
-        if (cx < width - 1) {
-            const n = cur + 1;
-            if (!reachable.has(n) && !walls.has(n) && !boxSet.has(n)) {
-                reachable.add(n);
-                queue.push(n);
+        for (const [dx, dy, delta] of directions) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+
+            const n = cur + delta;
+            if (reachable.has(n) || walls.has(n) || boxSet.has(n)) continue;
+
+            // Door check: treat locked doors as impassable
+            if (doors && doors.has(n)) continue;
+
+            // Gate check: can we enter this tile from direction (dx, dy)?
+            if (gates && gates.has(n) && !gateAllowsDirection(gates.get(n), dx, dy)) continue;
+
+            reachable.add(n);
+            queue.push(n);
+
+            // Teleporter: if this tile is a teleporter, also enqueue partner
+            if (teleporterMap && teleporterMap.has(n)) {
+                const partner = teleporterMap.get(n);
+                if (!reachable.has(partner) && !walls.has(partner) && !boxSet.has(partner)) {
+                    reachable.add(partner);
+                    queue.push(partner);
+                }
             }
         }
     }
 
     return reachable;
+}
+
+/**
+ * Check if a gate allows entry from direction (dx, dy).
+ * Gate tiles restrict which direction you can ENTER from.
+ */
+function gateAllowsDirection(gateTile, dx, dy) {
+    switch (gateTile) {
+        case TILES.GATE_UP:    return dy === -1; // moving up (from below)
+        case TILES.GATE_DOWN:  return dy === 1;  // moving down (from above)
+        case TILES.GATE_LEFT:  return dx === -1; // moving left (from right)
+        case TILES.GATE_RIGHT: return dx === 1;  // moving right (from left)
+        default: return true;
+    }
 }
 
 /**
@@ -268,7 +297,7 @@ function isSimpleDeadlock(boxPos, walls, targets, width, height) {
  * Resolve box sliding on ice.
  * If box lands on ice, slide it in (dx, dy) until hitting wall/box/non-ice tile.
  */
-function resolveBoxSlide(boxPos, dx, dy, walls, iceTiles, boxSet, width, height) {
+function resolveBoxSlide(boxPos, dx, dy, walls, iceTiles, boxSet, width, height, gates) {
     let pos = boxPos;
 
     while (iceTiles.has(pos)) {
@@ -284,6 +313,9 @@ function resolveBoxSlide(boxPos, dx, dy, walls, iceTiles, boxSet, width, height)
 
         // Wall or another box — stop
         if (walls.has(nextPos) || boxSet.has(nextPos)) break;
+
+        // Gate check: stop if next tile is a gate that blocks entry
+        if (gates && gates.has(nextPos) && !gateAllowsDirection(gates.get(nextPos), dx, dy)) break;
 
         pos = nextPos;
     }

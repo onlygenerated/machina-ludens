@@ -36,6 +36,18 @@ function fillRoundedRect(ctx, x, y, w, h, r) {
     ctx.fill();
 }
 
+// --- Gate helper ---
+
+function _gateAllowsEntry(gateTile, dx, dy) {
+    switch (gateTile) {
+        case TILES.GATE_UP:    return dy === -1; // moving up (entering from below)
+        case TILES.GATE_DOWN:  return dy === 1;  // moving down (entering from above)
+        case TILES.GATE_LEFT:  return dx === -1; // moving left (entering from right)
+        case TILES.GATE_RIGHT: return dx === 1;  // moving right (entering from left)
+        default: return true;
+    }
+}
+
 // --- Theme resolution ---
 
 // Default theme matching the original hardcoded colors (for tutorial levels)
@@ -272,6 +284,176 @@ function drawPatrolEnemy(ctx, x, y, dx, dy, tileSize) {
     ctx.restore();
 }
 
+function drawTeleporter(ctx, cx, cy, tileSize, pairIndex) {
+    const r = tileSize * 0.35;
+    const hues = [300, 180, 45]; // magenta, cyan, gold
+    const hue = hues[pairIndex % hues.length];
+    const color = `hsl(${hue}, 80%, 60%)`;
+
+    // Outer glow
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Outer ring
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, tileSize * 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner ring (smaller, offset for depth)
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, tileSize * 0.04);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Core dot
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawGate(ctx, px, py, tileSize, gateTile) {
+    // Semi-transparent amber background tint
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+
+    // Draw arrow/chevron pointing in allowed direction
+    const cx = px + tileSize / 2;
+    const cy = py + tileSize / 2;
+    const ar = tileSize * 0.3;
+
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = Math.max(2, tileSize * 0.08);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    switch (gateTile) {
+        case TILES.GATE_UP:
+            ctx.moveTo(cx - ar * 0.7, cy + ar * 0.3);
+            ctx.lineTo(cx, cy - ar * 0.5);
+            ctx.lineTo(cx + ar * 0.7, cy + ar * 0.3);
+            break;
+        case TILES.GATE_DOWN:
+            ctx.moveTo(cx - ar * 0.7, cy - ar * 0.3);
+            ctx.lineTo(cx, cy + ar * 0.5);
+            ctx.lineTo(cx + ar * 0.7, cy - ar * 0.3);
+            break;
+        case TILES.GATE_LEFT:
+            ctx.moveTo(cx + ar * 0.3, cy - ar * 0.7);
+            ctx.lineTo(cx - ar * 0.5, cy);
+            ctx.lineTo(cx + ar * 0.3, cy + ar * 0.7);
+            break;
+        case TILES.GATE_RIGHT:
+            ctx.moveTo(cx - ar * 0.3, cy - ar * 0.7);
+            ctx.lineTo(cx + ar * 0.5, cy);
+            ctx.lineTo(cx - ar * 0.3, cy + ar * 0.7);
+            break;
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawKey(ctx, cx, cy, tileSize, colorIndex) {
+    const colors = ['#ff4444', '#4488ff'];
+    const color = colors[colorIndex % colors.length];
+    const r = tileSize * 0.2;
+
+    // Glow
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy - r * 0.3, r * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Key head (circle)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy - r * 0.4, r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Key head hole
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(cx, cy - r * 0.4, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Key shaft
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - r * 0.12, cy, r * 0.24, r * 0.9);
+
+    // Key teeth
+    ctx.fillRect(cx, cy + r * 0.4, r * 0.3, r * 0.15);
+    ctx.fillRect(cx, cy + r * 0.7, r * 0.2, r * 0.15);
+
+    // Sparkle highlight
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.2, cy - r * 0.6, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawDoor(ctx, px, py, tileSize, colorIndex) {
+    const colors = ['#ff4444', '#4488ff'];
+    const color = colors[colorIndex % colors.length];
+
+    // Filled background at low alpha
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = color;
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+
+    // Barred pattern (vertical bars)
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, tileSize * 0.06);
+    const barSpacing = tileSize / 5;
+    for (let i = 1; i < 5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(px + i * barSpacing, py + tileSize * 0.1);
+        ctx.lineTo(px + i * barSpacing, py + tileSize * 0.9);
+        ctx.stroke();
+    }
+
+    // Horizontal bars
+    ctx.beginPath();
+    ctx.moveTo(px + tileSize * 0.1, py + tileSize * 0.3);
+    ctx.lineTo(px + tileSize * 0.9, py + tileSize * 0.3);
+    ctx.moveTo(px + tileSize * 0.1, py + tileSize * 0.7);
+    ctx.lineTo(px + tileSize * 0.9, py + tileSize * 0.7);
+    ctx.stroke();
+    ctx.restore();
+}
+
 function drawExit(ctx, cx, cy, tileSize) {
     const r = tileSize * 0.35;
 
@@ -499,6 +681,41 @@ function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, m
                     drawExit(ctx, cx, cy, tileSize);
                 } else if (overlay === TILES.SPIKES) {
                     drawSpikes(ctx, px, py, tileSize, !!options.spikePhase);
+                } else if (overlay === TILES.TELEPORTER) {
+                    // Look up pair index from teleporterPairs
+                    const idx = y * gridWidth + x;
+                    let pairIdx = 0;
+                    if (options.teleporterPairs) {
+                        for (let pi = 0; pi < options.teleporterPairs.length; pi++) {
+                            if (options.teleporterPairs[pi][0] === idx || options.teleporterPairs[pi][1] === idx) {
+                                pairIdx = pi;
+                                break;
+                            }
+                        }
+                    }
+                    drawTeleporter(ctx, cx, cy, tileSize, pairIdx);
+                } else if (overlay >= TILES.GATE_UP && overlay <= TILES.GATE_LEFT) {
+                    drawGate(ctx, px, py, tileSize, overlay);
+                } else if (overlay === TILES.KEY) {
+                    // Look up color index from keyDoorPairs
+                    const idx = y * gridWidth + x;
+                    let colorIdx = 0;
+                    if (options.keyDoorPairs) {
+                        for (const pair of options.keyDoorPairs) {
+                            if (pair.keyIdx === idx) { colorIdx = pair.colorIndex; break; }
+                        }
+                    }
+                    drawKey(ctx, cx, cy, tileSize, colorIdx);
+                } else if (overlay === TILES.DOOR) {
+                    // Look up color index from keyDoorPairs
+                    const idx = y * gridWidth + x;
+                    let colorIdx = 0;
+                    if (options.keyDoorPairs) {
+                        for (const pair of options.keyDoorPairs) {
+                            if (pair.doorIdx === idx) { colorIdx = pair.colorIndex; break; }
+                        }
+                    }
+                    drawDoor(ctx, px, py, tileSize, colorIdx);
                 }
             }
         }
@@ -569,6 +786,14 @@ export class Game {
 
         // Entity state (patrol enemies)
         this.entities = [];
+
+        // Teleporter state
+        this.teleporterPairs = [];
+        this._justTeleported = false;
+
+        // Key/door state
+        this.keyDoorPairs = [];
+        this.keysCollected = new Set();
 
         this.setupControls();
         this.setupTouchGestures();
@@ -655,6 +880,14 @@ export class Game {
                 : [];
             this.boxIceEnabled = !!this.generatedLevelData.boxIceEnabled;
 
+            // Reset teleporter state
+            this.teleporterPairs = this.generatedLevelData.teleporterPairs || [];
+            this._justTeleported = false;
+
+            // Reset key/door state
+            this.keyDoorPairs = this.generatedLevelData.keyDoorPairs || [];
+            this.keysCollected = new Set();
+
             this.updateUI();
             this.render();
         }
@@ -695,6 +928,9 @@ export class Game {
     move(dx, dy) {
         if (this.won) return;
 
+        // Reset teleport bounce flag
+        this._justTeleported = false;
+
         const newX = this.playerX + dx;
         const newY = this.playerY + dy;
 
@@ -702,6 +938,17 @@ export class Game {
 
         const targetTile = this.getTile(newX, newY);
         if (targetTile === TILES.WALL) return;
+
+        // Gate check: is destination a gate that blocks this direction?
+        if (this.overlays) {
+            const destIdx = newY * this.width + newX;
+            const destOverlay = this.overlays[destIdx];
+            if (destOverlay >= TILES.GATE_UP && destOverlay <= TILES.GATE_LEFT) {
+                if (!_gateAllowsEntry(destOverlay, dx, dy)) return;
+            }
+            // Door check: if destination is a locked door, block move
+            if (destOverlay === TILES.DOOR) return;
+        }
 
         this.saveState();
 
@@ -723,6 +970,23 @@ export class Game {
                 return;
             }
 
+            // Gate check: box can't be pushed into a gate that blocks this direction
+            if (this.overlays) {
+                const boxDestIdx = boxNewY * this.width + boxNewX;
+                const boxDestOverlay = this.overlays[boxDestIdx];
+                if (boxDestOverlay >= TILES.GATE_UP && boxDestOverlay <= TILES.GATE_LEFT) {
+                    if (!_gateAllowsEntry(boxDestOverlay, dx, dy)) {
+                        this.history.pop();
+                        return;
+                    }
+                }
+                // Door check: box can't be pushed into a locked door
+                if (boxDestOverlay === TILES.DOOR) {
+                    this.history.pop();
+                    return;
+                }
+            }
+
             const isOnTarget = boxTargetTile === TILES.TARGET;
             this.setTile(boxNewX, boxNewY, isOnTarget ? TILES.BOX_ON_TARGET : TILES.BOX);
             this.pushes++;
@@ -742,8 +1006,11 @@ export class Game {
         this.playerY = newY;
         this.setTile(newX, newY, movingToTarget ? TILES.TARGET : TILES.FLOOR);
 
-        // Collect overlay at new position
+        // Collect overlay at new position (handles collectibles and keys)
         this._collectOverlay();
+
+        // Teleporter handling — after collect, before ice
+        this._handleTeleporter();
 
         // Ice sliding — player slides on ice until hitting obstacle
         this._handleIceSlide(dx, dy);
@@ -789,6 +1056,37 @@ export class Game {
             if (tierAfter > tierBefore) {
                 this._showTierUpNotification(tierAfter);
             }
+        } else if (this.overlays[idx] === TILES.KEY) {
+            // Find which pair this key belongs to
+            const pair = this.keyDoorPairs.find(p => p.keyIdx === idx);
+            if (pair) {
+                this.keysCollected.add(pair.colorIndex);
+                this.overlays[idx] = 0; // Remove key
+                this.overlays[pair.doorIdx] = 0; // Unlock door
+            }
+        }
+    }
+
+    _handleTeleporter() {
+        if (!this.overlays || this._justTeleported) return;
+        const idx = this.playerY * this.width + this.playerX;
+        if (this.overlays[idx] !== TILES.TELEPORTER) return;
+
+        // Find partner
+        for (const [a, b] of this.teleporterPairs) {
+            let partner = -1;
+            if (a === idx) partner = b;
+            else if (b === idx) partner = a;
+            if (partner < 0) continue;
+
+            // Teleport player
+            this.playerX = partner % this.width;
+            this.playerY = Math.floor(partner / this.width);
+            this._justTeleported = true;
+
+            // Collect overlay at destination
+            this._collectOverlay();
+            break;
         }
     }
 
@@ -804,6 +1102,15 @@ export class Game {
 
             const nextTile = this.getTile(slideX, slideY);
             if (nextTile === TILES.WALL || nextTile === TILES.BOX || nextTile === TILES.BOX_ON_TARGET) break;
+
+            // Gate check: stop if next tile is a gate that blocks entry
+            const nextIdx = slideY * this.width + slideX;
+            const nextOverlay = this.overlays[nextIdx];
+            if (nextOverlay >= TILES.GATE_UP && nextOverlay <= TILES.GATE_LEFT) {
+                if (!_gateAllowsEntry(nextOverlay, dx, dy)) break;
+            }
+            // Door check: stop at locked door
+            if (nextOverlay === TILES.DOOR) break;
 
             // Leave current ice tile — restore floor (preserve TARGET)
             const leavingTile = this.getTile(this.playerX, this.playerY);
@@ -844,6 +1151,15 @@ export class Game {
             const nextTile = this.getTile(nextX, nextY);
             // Wall or another box — stop
             if (nextTile === TILES.WALL || nextTile === TILES.BOX || nextTile === TILES.BOX_ON_TARGET) break;
+
+            // Gate check: stop if next tile is a gate that blocks entry
+            const nextIdx = nextY * this.width + nextX;
+            const nextOverlay = this.overlays[nextIdx];
+            if (nextOverlay >= TILES.GATE_UP && nextOverlay <= TILES.GATE_LEFT) {
+                if (!_gateAllowsEntry(nextOverlay, dx, dy)) break;
+            }
+            // Door check: stop at locked door
+            if (nextOverlay === TILES.DOOR) break;
 
             // Clear old box tile (restore FLOOR or TARGET)
             const oldTile = this.getTile(boxX, boxY);
@@ -962,6 +1278,8 @@ export class Game {
         this.damageTakenThisLevel = state.damageTakenThisLevel || false;
         // Restore entities
         this.entities = state.entities ? cloneEntities(state.entities) : [];
+        // Restore keys
+        this.keysCollected = state.keysCollected ? new Set(state.keysCollected) : new Set();
         this.won = false;
 
         this.updateUI();
@@ -982,7 +1300,8 @@ export class Game {
             spikeMoveCounter: this.spikeMoveCounter,
             vitality: this.vitality,
             damageTakenThisLevel: this.damageTakenThisLevel,
-            entities: cloneEntities(this.entities)
+            entities: cloneEntities(this.entities),
+            keysCollected: new Set(this.keysCollected)
         });
     }
 
@@ -1080,7 +1399,12 @@ export class Game {
 
     render() {
         const theme = this.currentTheme || DEFAULT_THEME;
-        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, { spikePhase: this.spikePhase, entities: this.entities });
+        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, {
+            spikePhase: this.spikePhase,
+            entities: this.entities,
+            teleporterPairs: this.teleporterPairs,
+            keyDoorPairs: this.keyDoorPairs
+        });
     }
 
     // === PHASE STATE MACHINE ===
@@ -1211,7 +1535,9 @@ export class Game {
                     playerX: level.playerX,
                     playerY: level.playerY,
                     entities: level.entities ? cloneEntities(level.entities) : [],
-                    boxIceEnabled: !!level.boxIceEnabled
+                    boxIceEnabled: !!level.boxIceEnabled,
+                    teleporterPairs: level.teleporterPairs || [],
+                    keyDoorPairs: level.keyDoorPairs || []
                 };
             }
 
@@ -1245,7 +1571,11 @@ export class Game {
             const previewCtx = previewCanvas.getContext('2d');
             renderGrid(previewCtx, slot.levelData.width, slot.levelData.height,
                 slot.levelData.grid, slot.levelData.playerX, slot.levelData.playerY,
-                slot.theme, 180, slot.levelData.overlays, { entities: slot.levelData.entities });
+                slot.theme, 180, slot.levelData.overlays, {
+                    entities: slot.levelData.entities,
+                    teleporterPairs: slot.levelData.teleporterPairs,
+                    keyDoorPairs: slot.levelData.keyDoorPairs
+                });
             card.appendChild(previewCanvas);
 
             // Bot name
@@ -1265,6 +1595,9 @@ export class Game {
             if (genes.exitEnabled) traitText += ' \u00b7 Exit';
             if (genes.spikeEnabled) traitText += ' \u00b7 Spikes';
             if (genes.patrolEnabled) traitText += ' \u00b7 Patrol';
+            if (genes.teleporterEnabled) traitText += ' \u00b7 Teleporters';
+            if (genes.gateEnabled) traitText += ' \u00b7 Gates';
+            if (genes.keyDoorEnabled) traitText += ' \u00b7 Keys';
             traitsDiv.textContent = traitText;
             card.appendChild(traitsDiv);
 
@@ -1349,6 +1682,10 @@ export class Game {
             ? cloneEntities(slot.levelData.entities)
             : [];
         this.boxIceEnabled = !!slot.levelData.boxIceEnabled;
+        this.teleporterPairs = slot.levelData.teleporterPairs || [];
+        this._justTeleported = false;
+        this.keyDoorPairs = slot.levelData.keyDoorPairs || [];
+        this.keysCollected = new Set();
 
         // Save for reset
         this.generatedLevelData = {
@@ -1361,7 +1698,9 @@ export class Game {
             entities: slot.levelData.entities
                 ? cloneEntities(slot.levelData.entities)
                 : [],
-            boxIceEnabled: !!slot.levelData.boxIceEnabled
+            boxIceEnabled: !!slot.levelData.boxIceEnabled,
+            teleporterPairs: slot.levelData.teleporterPairs || [],
+            keyDoorPairs: slot.levelData.keyDoorPairs || []
         };
 
         // Update play view bot info
