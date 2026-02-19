@@ -5,8 +5,8 @@
 
 export const TIER_THRESHOLDS = [
     { tier: 1, name: 'Primordial', dna: 0 },
-    { tier: 2, name: 'Awakening',  dna: 50 },
-    { tier: 3, name: 'Flourishing', dna: 150 }
+    { tier: 2, name: 'Awakening',  dna: 13 },
+    { tier: 3, name: 'Flourishing', dna: 38 }
 ];
 
 export function getTierForDNA(dnaBank) {
@@ -41,9 +41,9 @@ export const GENE_REGISTRY = [
     // --- Tier 1: Structural ---
     {
         name: 'gridSize', tier: 1, type: 'int',
-        min: 9, max: 80, defaultValue: 9,
+        min: 9, max: 40, defaultValue: 9,
         mutationRate: 0.2, mutationDelta: 3,
-        randomFn: () => 9 + Math.floor(Math.random() * 42)
+        randomFn: () => 9 + Math.floor(Math.random() * 32)
     },
     {
         name: 'boxCount', tier: 1, type: 'int',

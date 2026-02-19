@@ -20,6 +20,8 @@
 ✅ State persistence — DNA bank, population, and vitality survive page reloads
 ✅ Forward BFS solver with box-ice support (Phase 3.3 partial: solver, box-ice mechanic)
 ✅ Teleporters, one-way gates, keys/doors (Phase 3.3 complete)
+✅ Rebalanced: grid max 40 (from 80), tier DNA thresholds 13/38 (from 50/150)
+✅ Play-view legend panel showing active symbols for current level
 
 **Current Phase:** Phase 3 - Mechanic Mutations (3.3 complete)
 
@@ -254,7 +256,8 @@ AI bots that evolve cultural preferences for puzzle design through genetic algor
 - Population size: 5 genomes per generation
 - Selection: Tournament (pick best of 3, 5 rounds, population-only pool) → top 3 survive → champion elite + 3 offspring from top 3 + 1 wild card
 - Mutation rate: per-gene (defined in gene-registry.js; 20% for most, 5% for binary toggles)
-- Tier system: Tier 1 (0 DNA) = Sokoban + collectibles, Tier 2 (50 DNA) = ice/box-ice/exit/teleporters, Tier 3 (150 DNA) = spikes + patrol + gates + keys/doors
+- Tier system: Tier 1 (0 DNA) = Sokoban + collectibles, Tier 2 (13 DNA) = ice/box-ice/exit/teleporters, Tier 3 (38 DNA) = spikes + patrol + gates + keys/doors
+- Grid size: 9-40 (halved upper bound from 80 for tighter, more strategic levels)
 - Vitality: 3 starting hearts, max 5, +0.5 on clean solve, -1 on active spike, death at 0
 
 ### Key Design Decisions

@@ -899,8 +899,8 @@ export class Bot {
         // Calculate normalized distance for each trait
         // Closer values = higher affinity
 
-        // Grid size: 7-80 range (span of 73)
-        const gridDiff = Math.abs(myGenes.gridSize - theirGenes.gridSize) / 73;
+        // Grid size: 9-40 range (span of 31)
+        const gridDiff = Math.abs(myGenes.gridSize - theirGenes.gridSize) / 31;
 
         // Box count: 2-15 range (span of 13)
         const boxDiff = Math.abs(myGenes.boxCount - theirGenes.boxCount) / 13;

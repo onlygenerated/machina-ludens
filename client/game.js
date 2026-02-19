@@ -1397,6 +1397,93 @@ export class Game {
         return '\u2665'.repeat(full) + (half ? '\u2661' : '') + '\u2661'.repeat(Math.max(0, empty));
     }
 
+    _updateLegend() {
+        const el = document.getElementById('play-legend');
+        if (!el) return;
+
+        // Always show base items
+        const items = [
+            { color: '#e07040', label: 'Player' },
+            { color: '#c4a050', shape: 'diamond', label: 'Box' },
+            { color: '#334', border: '#556', label: 'Target' },
+            { color: '#8B4513', label: 'Wall' }
+        ];
+
+        // Conditionally add overlay/mechanic items based on current level
+        if (this.overlays) {
+            const hasOverlay = (tileVal) => this.overlays.some(o => o === tileVal);
+
+            if (hasOverlay(TILES.COLLECTIBLE)) {
+                items.push({ color: '#00e5ff', label: 'DNA fragment' });
+            }
+            if (hasOverlay(TILES.ICE)) {
+                items.push({ color: '#88ccff', alpha: 0.5, label: 'Ice (slide)' });
+            }
+            if (hasOverlay(TILES.EXIT)) {
+                items.push({ color: '#00ff88', border: '#00ff88', label: 'Exit portal' });
+            }
+            if (hasOverlay(TILES.SPIKES)) {
+                items.push({ color: '#ff4444', label: 'Spikes (timed)' });
+            }
+            if (hasOverlay(TILES.TELEPORTER)) {
+                items.push({ color: '#cc66ff', label: 'Teleporter' });
+            }
+            if (hasOverlay(TILES.GATE_UP) || hasOverlay(TILES.GATE_DOWN) ||
+                hasOverlay(TILES.GATE_LEFT) || hasOverlay(TILES.GATE_RIGHT)) {
+                items.push({ color: '#ffcc00', alpha: 0.7, label: 'One-way gate' });
+            }
+            if (hasOverlay(TILES.KEY)) {
+                items.push({ color: '#ff4444', label: 'Key' });
+            }
+            if (hasOverlay(TILES.DOOR)) {
+                items.push({ color: '#ff4444', alpha: 0.5, border: '#ff4444', label: 'Locked door' });
+            }
+        }
+
+        if (this.entities && this.entities.length > 0) {
+            items.push({ color: '#ff4422', label: 'Patrol enemy' });
+        }
+
+        // Build legend HTML
+        while (el.firstChild) el.removeChild(el.firstChild);
+
+        const title = document.createElement('div');
+        title.className = 'legend-title';
+        title.textContent = 'Legend';
+        el.appendChild(title);
+
+        for (const item of items) {
+            const row = document.createElement('div');
+            row.className = 'legend-item';
+
+            const swatch = document.createElement('div');
+            swatch.className = 'legend-swatch';
+            swatch.style.background = item.color;
+            if (item.alpha) swatch.style.opacity = item.alpha;
+            if (item.border) {
+                swatch.style.border = `2px solid ${item.border}`;
+                if (!item.alpha) swatch.style.background = 'transparent';
+            }
+            if (item.shape === 'diamond') {
+                swatch.style.transform = 'rotate(45deg) scale(0.75)';
+            }
+            row.appendChild(swatch);
+
+            const label = document.createElement('span');
+            label.textContent = item.label;
+            row.appendChild(label);
+
+            el.appendChild(row);
+        }
+
+        el.style.display = 'block';
+    }
+
+    _hideLegend() {
+        const el = document.getElementById('play-legend');
+        if (el) el.style.display = 'none';
+    }
+
     render() {
         const theme = this.currentTheme || DEFAULT_THEME;
         renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, {
@@ -1710,6 +1797,7 @@ export class Game {
         this.updateUI();
         this.render();
         this.updatePhaseUI();
+        this._updateLegend();
     }
 
     backToComparison() {
@@ -1724,6 +1812,7 @@ export class Game {
 
         this.activeLevelIdx = null;
         document.getElementById('win-message').textContent = '';
+        this._hideLegend();
         this._renderComparisonView();
     }
 

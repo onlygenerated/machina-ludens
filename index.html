@@ -287,6 +287,51 @@
             margin-bottom: 10px;
         }
 
+        #play-layout {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        #play-legend {
+            display: none;
+            background: #1a1a22;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 0.75em;
+            color: #999;
+            min-width: 130px;
+            max-width: 160px;
+            flex-shrink: 0;
+        }
+
+        #play-legend .legend-title {
+            color: #666;
+            font-weight: bold;
+            font-size: 0.85em;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        #play-legend .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+
+        #play-legend .legend-swatch {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            border-radius: 3px;
+        }
+
         #play-controls {
             margin-top: 15px;
             text-align: center;
@@ -489,6 +534,17 @@
                 align-items: center;
             }
 
+            #play-layout {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            #play-legend {
+                max-width: 100%;
+                min-width: 0;
+                width: 90%;
+            }
+
             .preview-card {
                 width: 90%;
                 max-width: 300px;
@@ -528,13 +584,16 @@
         <div id="play-view">
             <div id="play-bot-name">-</div>
             <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span> | <span id="dna-counter" style="color: #00e5ff;">DNA: <span id="dna-count">0</span></span> | <span id="vitality-display" style="color: #ff6666; letter-spacing: 2px;">&#x2665;&#x2665;&#x2665;</span></div>
-            <div style="position: relative; display: inline-block;">
-                <canvas id="canvas" width="480" height="480"></canvas>
-                <div id="loading-overlay">
-                    <div class="spinner"></div>
-                    <div style="margin-top: 12px;">Generating...</div>
+            <div id="play-layout">
+                <div style="position: relative; display: inline-block;">
+                    <canvas id="canvas" width="480" height="480"></canvas>
+                    <div id="loading-overlay">
+                        <div class="spinner"></div>
+                        <div style="margin-top: 12px;">Generating...</div>
+                    </div>
+                    <div id="damage-flash"></div>
                 </div>
-                <div id="damage-flash"></div>
+                <div id="play-legend"></div>
             </div>
             <div id="win-message"></div>
             <div id="play-controls">
