@@ -1401,47 +1401,132 @@ export class Game {
         const el = document.getElementById('play-legend');
         if (!el) return;
 
-        // Always show base items
-        const items = [
-            { color: '#e07040', label: 'Player' },
-            { color: '#c4a050', shape: 'diamond', label: 'Box' },
-            { color: '#334', border: '#556', label: 'Target' },
-            { color: '#8B4513', label: 'Wall' }
-        ];
+        const theme = this.currentTheme || DEFAULT_THEME;
+        const C = theme.colors;
+        const S = 24; // swatch canvas size (pixels)
 
-        // Conditionally add overlay/mechanic items based on current level
+        // Each item has a label and a draw function that renders onto a S×S canvas
+        const items = [];
+
+        // --- Player ---
+        items.push({ label: 'Player', draw(ctx) {
+            const cx = S / 2, cy = S / 2, r = S * 0.35;
+            ctx.fillStyle = C.PLAYER;
+            if (theme.playerShape === 'circle') {
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                fillRoundedRect(ctx, cx - r, cy - r, r * 2, r * 2, r * 0.4);
+            }
+        }});
+
+        // --- Box ---
+        items.push({ label: 'Box', draw(ctx) {
+            const cx = S / 2, cy = S / 2, half = S * 0.45;
+            ctx.fillStyle = C.BOX;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - half);
+            ctx.lineTo(cx + half, cy);
+            ctx.lineTo(cx, cy + half);
+            ctx.lineTo(cx - half, cy);
+            ctx.closePath();
+            ctx.fill();
+        }});
+
+        // --- Target ---
+        items.push({ label: 'Target', draw(ctx) {
+            const inset = S * 0.08, size = S - inset * 2, r = size * 0.4;
+            ctx.fillStyle = C.TARGET;
+            fillRoundedRect(ctx, inset, inset, size, size, r);
+        }});
+
+        // --- Wall ---
+        items.push({ label: 'Wall', draw(ctx) {
+            const pad = Math.max(1, S * theme.borderScale);
+            const cr = (theme.cornerRadiusFactor || 0) * S;
+            ctx.fillStyle = C.WALL_LIGHT;
+            fillRoundedRect(ctx, 0, 0, S, S, cr);
+            ctx.fillStyle = C.WALL;
+            fillRoundedRect(ctx, pad, pad, S - pad, S - pad, cr * 0.8);
+        }});
+
+        // --- Conditional overlays ---
         if (this.overlays) {
-            const hasOverlay = (tileVal) => this.overlays.some(o => o === tileVal);
+            const has = (v) => this.overlays.includes(v);
 
-            if (hasOverlay(TILES.COLLECTIBLE)) {
-                items.push({ color: '#00e5ff', label: 'DNA fragment' });
+            if (has(TILES.COLLECTIBLE)) {
+                items.push({ label: 'DNA fragment', draw(ctx) {
+                    drawCollectible(ctx, S / 2, S / 2, S);
+                }});
             }
-            if (hasOverlay(TILES.ICE)) {
-                items.push({ color: '#88ccff', alpha: 0.5, label: 'Ice (slide)' });
+            if (has(TILES.ICE)) {
+                items.push({ label: 'Ice (slide)', draw(ctx) {
+                    drawIce(ctx, 0, 0, S);
+                }});
             }
-            if (hasOverlay(TILES.EXIT)) {
-                items.push({ color: '#00ff88', border: '#00ff88', label: 'Exit portal' });
+            if (has(TILES.EXIT)) {
+                items.push({ label: 'Exit portal', draw(ctx) {
+                    drawExit(ctx, S / 2, S / 2, S);
+                }});
             }
-            if (hasOverlay(TILES.SPIKES)) {
-                items.push({ color: '#ff4444', label: 'Spikes (timed)' });
+            if (has(TILES.SPIKES)) {
+                items.push({ label: 'Spikes (timed)', draw(ctx) {
+                    drawSpikes(ctx, 0, 0, S, true);
+                }});
             }
-            if (hasOverlay(TILES.TELEPORTER)) {
-                items.push({ color: '#cc66ff', label: 'Teleporter' });
+            if (has(TILES.TELEPORTER)) {
+                items.push({ label: 'Teleporter', draw(ctx) {
+                    drawTeleporter(ctx, S / 2, S / 2, S, 0);
+                }});
             }
-            if (hasOverlay(TILES.GATE_UP) || hasOverlay(TILES.GATE_DOWN) ||
-                hasOverlay(TILES.GATE_LEFT) || hasOverlay(TILES.GATE_RIGHT)) {
-                items.push({ color: '#ffcc00', alpha: 0.7, label: 'One-way gate' });
+            if (has(TILES.GATE_UP) || has(TILES.GATE_DOWN) ||
+                has(TILES.GATE_LEFT) || has(TILES.GATE_RIGHT)) {
+                items.push({ label: 'One-way gate', draw(ctx) {
+                    drawGate(ctx, 0, 0, S, TILES.GATE_RIGHT);
+                }});
             }
-            if (hasOverlay(TILES.KEY)) {
-                items.push({ color: '#ff4444', label: 'Key' });
+            if (has(TILES.KEY)) {
+                items.push({ label: 'Key', draw(ctx) {
+                    drawKey(ctx, S / 2, S / 2, S, 0);
+                }});
             }
-            if (hasOverlay(TILES.DOOR)) {
-                items.push({ color: '#ff4444', alpha: 0.5, border: '#ff4444', label: 'Locked door' });
+            if (has(TILES.DOOR)) {
+                items.push({ label: 'Locked door', draw(ctx) {
+                    drawDoor(ctx, 0, 0, S, 0);
+                }});
             }
         }
 
         if (this.entities && this.entities.length > 0) {
-            items.push({ color: '#ff4422', label: 'Patrol enemy' });
+            items.push({ label: 'Patrol enemy', draw(ctx) {
+                // Draw at tile (0,0) with dx=1 (right-facing)
+                const cx = S / 2, cy = S / 2, r = S * 0.35;
+                ctx.save();
+                ctx.globalAlpha = 0.12;
+                ctx.fillStyle = '#ff6600';
+                ctx.fillRect(0, 0, S, S);
+                ctx.restore();
+                ctx.save();
+                ctx.fillStyle = '#ff4422';
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                ctx.moveTo(cx + r, cy);
+                ctx.lineTo(cx - r * 0.6, cy - r * 0.7);
+                ctx.lineTo(cx - r * 0.6, cy + r * 0.7);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#ff8844';
+                ctx.lineWidth = Math.max(1, S * 0.04);
+                ctx.stroke();
+                ctx.restore();
+                ctx.save();
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(cx + r * 0.15, cy, Math.max(1, S * 0.06), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }});
         }
 
         // Build legend HTML
@@ -1456,18 +1541,19 @@ export class Game {
             const row = document.createElement('div');
             row.className = 'legend-item';
 
-            const swatch = document.createElement('div');
-            swatch.className = 'legend-swatch';
-            swatch.style.background = item.color;
-            if (item.alpha) swatch.style.opacity = item.alpha;
-            if (item.border) {
-                swatch.style.border = `2px solid ${item.border}`;
-                if (!item.alpha) swatch.style.background = 'transparent';
-            }
-            if (item.shape === 'diamond') {
-                swatch.style.transform = 'rotate(45deg) scale(0.75)';
-            }
-            row.appendChild(swatch);
+            const canvas = document.createElement('canvas');
+            canvas.width = S;
+            canvas.height = S;
+            canvas.className = 'legend-swatch';
+            canvas.style.width = S + 'px';
+            canvas.style.height = S + 'px';
+            const sCtx = canvas.getContext('2d');
+            // Draw floor background
+            sCtx.fillStyle = C.FLOOR;
+            sCtx.fillRect(0, 0, S, S);
+            // Draw the actual symbol on top
+            item.draw(sCtx);
+            row.appendChild(canvas);
 
             const label = document.createElement('span');
             label.textContent = item.label;
