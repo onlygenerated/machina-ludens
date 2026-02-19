@@ -9,5 +9,6 @@ export const TILES = {
     // Overlay tile types (stored in overlays array, not main grid)
     COLLECTIBLE: 6, // DNA fragment pickup
     ICE: 7,         // Player-only ice (slides until hitting obstacle)
-    EXIT: 8         // Must reach after solving to complete level
+    EXIT: 8,        // Must reach after solving to complete level
+    SPIKES: 9       // Timed hazard — toggles safe/active every N moves
 };

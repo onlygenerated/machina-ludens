@@ -1,6 +1,7 @@
 import { TILES } from '../shared/tiles.js';
 import { Genome, Population, Bot } from '../shared/genome.js';
 import { LEVELS } from './levels.js';
+import { getTierForDNA, getTierInfo, getNextTierInfo } from '../shared/gene-registry.js';
 
 // Game constants
 const MAX_CANVAS = 600;
@@ -173,6 +174,44 @@ function drawIce(ctx, px, py, tileSize) {
     ctx.restore();
 }
 
+function drawSpikes(ctx, px, py, tileSize, active) {
+    const cx = px + tileSize / 2;
+    const cy = py + tileSize / 2;
+    const r = tileSize * 0.35;
+
+    // Background tint
+    ctx.save();
+    ctx.globalAlpha = active ? 0.15 : 0.05;
+    ctx.fillStyle = active ? '#ff4444' : '#888888';
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+
+    // Draw 5 triangular spikes
+    const color = active ? '#ff4444' : '#666666';
+    const alpha = active ? 0.9 : 0.35;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    const spikeH = r * 0.7;
+    const spikeW = r * 0.3;
+    const positions = [
+        [cx, cy - r * 0.5],
+        [cx - r * 0.45, cy - r * 0.15],
+        [cx + r * 0.45, cy - r * 0.15],
+        [cx - r * 0.25, cy + r * 0.35],
+        [cx + r * 0.25, cy + r * 0.35]
+    ];
+    for (const [sx, sy] of positions) {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - spikeH);
+        ctx.lineTo(sx + spikeW, sy);
+        ctx.lineTo(sx - spikeW, sy);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
 function drawExit(ctx, cx, cy, tileSize) {
     const r = tileSize * 0.35;
 
@@ -214,7 +253,7 @@ function drawExit(ctx, cx, cy, tileSize) {
 
 // --- Standalone grid renderer ---
 
-function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, maxSize, overlays = null) {
+function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, maxSize, overlays = null, options = {}) {
     const tileSize = Math.max(4, Math.floor(maxSize / Math.max(gridWidth, gridHeight)));
     const canvasW = gridWidth * tileSize;
     const canvasH = gridHeight * tileSize;
@@ -398,6 +437,8 @@ function renderGrid(ctx, gridWidth, gridHeight, grid, playerX, playerY, theme, m
                     drawIce(ctx, px, py, tileSize);
                 } else if (overlay === TILES.EXIT) {
                     drawExit(ctx, cx, cy, tileSize);
+                } else if (overlay === TILES.SPIKES) {
+                    drawSpikes(ctx, px, py, tileSize, !!options.spikePhase);
                 }
             }
         }
@@ -432,8 +473,8 @@ export class Game {
         // Phase state
         this.phase = PHASES.CHOOSE;
 
-        // Population
-        this.population = new Population(5);
+        // Population (tier 1 initially; loadState may override)
+        this.population = new Population(5, 1);
         this.generationHistory = [];
         this.lastBreedingReport = null;
 
@@ -449,8 +490,21 @@ export class Game {
         this.dnaCollected = 0;       // DNA collected this level
         this.dnaBank = 0;            // Total DNA across all levels
 
+        // Vitality system
+        this.vitality = 3;
+        this.maxVitality = 5;
+        this.damageTakenThisLevel = false;
+
+        // Spike state
+        this.spikePhase = 0;         // 0=safe, 1=active
+        this.spikeMoveCounter = 0;
+        this.spikeToggleInterval = 3;
+
         this.setupControls();
         this.setupTouchGestures();
+
+        // Load persisted state (DNA bank, population, vitality)
+        this.loadState();
 
         // Start the phase loop
         this.startTournament();
@@ -458,6 +512,10 @@ export class Game {
 
     get isPlaying() {
         return this.activeLevelIdx !== null;
+    }
+
+    get currentTier() {
+        return getTierForDNA(this.dnaBank);
     }
 
     handleTouch(dx, dy) {
@@ -515,6 +573,11 @@ export class Game {
             // Undo any DNA collected this level
             this.dnaBank = Math.max(0, this.dnaBank - this.dnaCollected);
             this.dnaCollected = 0;
+            this.damageTakenThisLevel = false;
+
+            // Reset spike state
+            this.spikePhase = 0;
+            this.spikeMoveCounter = 0;
 
             this.updateUI();
             this.render();
@@ -605,8 +668,20 @@ export class Game {
         this._handleIceSlide(dx, dy);
 
         this.moves++;
+
+        // Advance spike phase and check for spike damage
+        this._advanceSpikePhase();
+        this._checkSpikeDamage();
+
         this.updateUI();
         this.render();
+
+        // Check for death before win
+        if (this.vitality <= 0) {
+            this._triggerExtinction();
+            return;
+        }
+
         this.checkWin();
     }
 
@@ -616,7 +691,12 @@ export class Game {
         if (this.overlays[idx] === TILES.COLLECTIBLE) {
             this.overlays[idx] = 0;
             this.dnaCollected++;
+            const tierBefore = this.currentTier;
             this.dnaBank++;
+            const tierAfter = this.currentTier;
+            if (tierAfter > tierBefore) {
+                this._showTierUpNotification(tierAfter);
+            }
         }
     }
 
@@ -648,8 +728,86 @@ export class Game {
             // Collect overlay at new position
             this._collectOverlay();
 
+            // Check for spike damage at each slide position
+            this._checkSpikeDamage();
+
             idx = this.playerY * this.width + this.playerX;
         }
+    }
+
+    // --- Spike phase & damage ---
+
+    _advanceSpikePhase() {
+        if (!this.overlays) return;
+        // Only advance if level has spikes
+        const hasSpikes = this.overlays.some(o => o === TILES.SPIKES);
+        if (!hasSpikes) return;
+
+        this.spikeMoveCounter++;
+        if (this.spikeMoveCounter >= this.spikeToggleInterval) {
+            this.spikeMoveCounter = 0;
+            this.spikePhase = this.spikePhase ? 0 : 1;
+        }
+    }
+
+    _checkSpikeDamage() {
+        if (!this.overlays || this.spikePhase !== 1) return;
+        const idx = this.playerY * this.width + this.playerX;
+        if (this.overlays[idx] === TILES.SPIKES) {
+            this._takeDamage(1);
+        }
+    }
+
+    _takeDamage(amount) {
+        this.vitality = Math.max(0, this.vitality - amount);
+        this.damageTakenThisLevel = true;
+        this._flashDamage();
+    }
+
+    _flashDamage() {
+        const flash = document.getElementById('damage-flash');
+        if (!flash) return;
+        flash.style.display = 'block';
+        flash.style.animation = 'none';
+        // Force reflow
+        flash.offsetHeight;
+        flash.style.animation = 'damageFlash 0.4s ease-out forwards';
+        setTimeout(() => { flash.style.display = 'none'; }, 400);
+    }
+
+    // --- Tier-up notification ---
+
+    _showTierUpNotification(tier) {
+        const info = getTierInfo(this.dnaBank);
+        const el = document.getElementById('tier-notification');
+        if (!el) return;
+        el.textContent = `Tier ${tier}: ${info.name}`;
+        el.style.display = 'block';
+        el.style.animation = 'none';
+        el.offsetHeight;
+        el.style.animation = 'fadeInOut 3.5s ease-in-out forwards';
+        setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+
+    // --- Extinction (death) ---
+
+    _triggerExtinction() {
+        // Hide all views, show death screen
+        document.getElementById('comparison-view').style.display = 'none';
+        document.getElementById('play-view').style.display = 'none';
+        document.getElementById('observe-view').style.display = 'none';
+        document.getElementById('death-screen').style.display = 'flex';
+    }
+
+    restartAfterExtinction() {
+        document.getElementById('death-screen').style.display = 'none';
+        this.dnaBank = 0;
+        this.vitality = 3;
+        this.population = new Population(5, this.currentTier);
+        this.generationHistory = [];
+        this.lastBreedingReport = null;
+        localStorage.removeItem('machinaLudensState');
+        this.startTournament();
     }
 
     undo() {
@@ -666,6 +824,11 @@ export class Game {
         const dnaDelta = (this.dnaCollected || 0) - (state.dnaCollected || 0);
         this.dnaCollected = state.dnaCollected || 0;
         this.dnaBank = Math.max(0, (this.dnaBank || 0) - dnaDelta);
+        // Restore spike and vitality state
+        this.spikePhase = state.spikePhase || 0;
+        this.spikeMoveCounter = state.spikeMoveCounter || 0;
+        this.vitality = state.vitality !== undefined ? state.vitality : this.vitality;
+        this.damageTakenThisLevel = state.damageTakenThisLevel || false;
         this.won = false;
 
         this.updateUI();
@@ -681,7 +844,11 @@ export class Game {
             playerY: this.playerY,
             moves: this.moves,
             pushes: this.pushes,
-            dnaCollected: this.dnaCollected || 0
+            dnaCollected: this.dnaCollected || 0,
+            spikePhase: this.spikePhase,
+            spikeMoveCounter: this.spikeMoveCounter,
+            vitality: this.vitality,
+            damageTakenThisLevel: this.damageTakenThisLevel
         });
     }
 
@@ -715,12 +882,24 @@ export class Game {
         }
 
         this.won = true;
-        document.getElementById('win-message').textContent = 'Level Complete!';
+
+        // Award vitality on clean solve (no damage taken)
+        let winMsg = 'Level Complete!';
+        if (!this.damageTakenThisLevel) {
+            const oldVitality = this.vitality;
+            this.vitality = Math.min(this.maxVitality, this.vitality + 0.5);
+            if (this.vitality > oldVitality) {
+                winMsg += ' +0.5 HP';
+            }
+        }
+        document.getElementById('win-message').textContent = winMsg;
 
         // Mark slot as completed
         if (this.activeLevelIdx !== null) {
             this.roundSlots[this.activeLevelIdx].completed = true;
         }
+
+        this.updateUI();
     }
 
     showWin(message) {
@@ -735,11 +914,39 @@ export class Game {
         if (dnaEl) dnaEl.textContent = this.dnaCollected || 0;
         const dnaBankEl = document.getElementById('dna-bank-count');
         if (dnaBankEl) dnaBankEl.textContent = this.dnaBank || 0;
+
+        // Tier display
+        const tierNameEl = document.getElementById('tier-name');
+        const tierBarFill = document.getElementById('tier-bar-fill');
+        if (tierNameEl && tierBarFill) {
+            const info = getTierInfo(this.dnaBank);
+            const next = getNextTierInfo(this.dnaBank);
+            tierNameEl.textContent = info.name;
+            if (next) {
+                const progress = (this.dnaBank - info.dna) / (next.dna - info.dna);
+                tierBarFill.style.width = `${Math.min(100, progress * 100)}%`;
+            } else {
+                tierBarFill.style.width = '100%';
+            }
+        }
+
+        // Vitality hearts display
+        const vitalityEl = document.getElementById('vitality-display');
+        if (vitalityEl) {
+            vitalityEl.textContent = this._renderHearts();
+        }
+    }
+
+    _renderHearts() {
+        const full = Math.floor(this.vitality);
+        const half = (this.vitality % 1) >= 0.5 ? 1 : 0;
+        const empty = Math.floor(this.maxVitality) - full - half;
+        return '\u2665'.repeat(full) + (half ? '\u2661' : '') + '\u2661'.repeat(Math.max(0, empty));
     }
 
     render() {
         const theme = this.currentTheme || DEFAULT_THEME;
-        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays);
+        renderGrid(this.ctx, this.width, this.height, this.grid, this.playerX, this.playerY, theme, MAX_CANVAS, this.overlays, { spikePhase: this.spikePhase });
     }
 
     // === PHASE STATE MACHINE ===
@@ -920,6 +1127,7 @@ export class Game {
             let traitText = `${genes.gridSize}\u00d7${genes.gridSize} \u00b7 ${genes.boxCount} boxes \u00b7 ${dominantStyle}`;
             if (genes.iceEnabled) traitText += ' \u00b7 Ice';
             if (genes.exitEnabled) traitText += ' \u00b7 Exit';
+            if (genes.spikeEnabled) traitText += ' \u00b7 Spikes';
             traitsDiv.textContent = traitText;
             card.appendChild(traitsDiv);
 
@@ -997,6 +1205,9 @@ export class Game {
         this.history = [];
         this.won = false;
         this.dnaCollected = 0;
+        this.damageTakenThisLevel = false;
+        this.spikePhase = 0;
+        this.spikeMoveCounter = 0;
 
         // Save for reset
         this.generatedLevelData = {
@@ -1047,7 +1258,7 @@ export class Game {
     }
 
     _triggerTournamentBreed() {
-        const report = this.population.evolveFromWinners(this.roundWinners);
+        const report = this.population.evolveFromWinners(this.roundWinners, this.currentTier);
         this.lastBreedingReport = report;
         this.saveGenerationHistory();
 
@@ -1375,6 +1586,7 @@ export class Game {
             population: this.population.toJSON(),
             generationHistory: this.generationHistory,
             dnaBank: this.dnaBank || 0,
+            vitality: this.vitality,
             timestamp: Date.now()
         };
         localStorage.setItem('machinaLudensState', JSON.stringify(state));
@@ -1389,8 +1601,9 @@ export class Game {
             this.population = Population.fromJSON(state.population);
             this.generationHistory = state.generationHistory || [];
             this.dnaBank = state.dnaBank || 0;
+            if (state.vitality !== undefined) this.vitality = state.vitality;
 
-            console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries, DNA bank: ${this.dnaBank}`);
+            console.log(`Loaded state: Generation ${this.population.generation}, ${this.generationHistory.length} history entries, DNA bank: ${this.dnaBank}, Tier: ${this.currentTier}`);
         } catch (e) {
             console.error('Failed to load saved state:', e);
         }
@@ -1399,7 +1612,9 @@ export class Game {
     clearState() {
         if (confirm('Clear all evolution history and restart? This cannot be undone.')) {
             localStorage.removeItem('machinaLudensState');
-            this.population = new Population(5);
+            this.dnaBank = 0;
+            this.vitality = 3;
+            this.population = new Population(5, this.currentTier);
             this.generationHistory = [];
             this.startTournament();
         }

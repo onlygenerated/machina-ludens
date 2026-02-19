@@ -1,5 +1,6 @@
 import { SokobanGenerator } from './generator.js';
 import { decorateLevel } from './decorator.js';
+import { GENE_REGISTRY, GENE_MAP, getLockedGenes } from './gene-registry.js';
 
 // Genome for Sokoban Level Generation
 // Represents the "DNA" of a level generator that can evolve through selection
@@ -30,6 +31,11 @@ export class Genome {
                 this.genes.iceDensity = 0;
                 this.genes.exitEnabled = 0;
             }
+            // Backward compatibility: backfill spike genes for old genomes
+            if (this.genes.spikeEnabled === undefined) {
+                this.genes.spikeEnabled = 0;
+                this.genes.spikeDensity = 0;
+            }
         } else {
             // Initialize with random genes
             this.genes = Genome.randomGenes();
@@ -42,38 +48,17 @@ export class Genome {
         return Math.random().toString(36).slice(2, 8);
     }
 
-    // Generate random genes within valid ranges
-    static randomGenes() {
-        return {
-            // Grid dimensions (9-50) - wide range for variety
-            gridSize: 9 + Math.floor(Math.random() * 42),
-
-            // Number of boxes/targets (3-8)
-            boxCount: 3 + Math.floor(Math.random() * 6),
-
-            // Complexity: number of reverse-play moves (30-80)
-            complexity: 30 + Math.floor(Math.random() * 51),
-
-            // Wall density: probability of internal walls (0.05-0.25)
-            wallDensity: 0.05 + Math.random() * 0.2,
-
-            // Style weights (0-100 each) — relative weights for generation algorithm selection
-            styleClusters: Math.floor(Math.random() * 101),
-            styleMaze: Math.floor(Math.random() * 101),
-            styleCaves: Math.floor(Math.random() * 101),
-            styleClusteredRooms: Math.floor(Math.random() * 101),
-
-            // Visual genes
-            palette: Math.random(),       // 0-1 circular, controls HSL hue
-            tileStyle: Math.random(),     // 0-1 clamped, angular→organic
-            decoration: Math.random(),    // 0-1 clamped, minimal→rich
-
-            // Mechanic genes
-            collectibleDensity: 0.3 + Math.random() * 0.5, // 0.3-0.8
-            iceEnabled: Math.random() < 0.5 ? 1 : 0,
-            iceDensity: Math.random() * 0.3,                // 0-0.3
-            exitEnabled: Math.random() < 0.5 ? 1 : 0
-        };
+    // Generate random genes within valid ranges, gated by tier
+    static randomGenes(tier = 3) {
+        const genes = {};
+        for (const def of GENE_REGISTRY) {
+            if (def.tier <= tier) {
+                genes[def.name] = def.randomFn();
+            } else {
+                genes[def.name] = def.defaultValue;
+            }
+        }
+        return genes;
     }
 
     // Create a level generator from this genome
@@ -114,7 +99,7 @@ export class Genome {
     }
 
     // Crossover: create a child genome by mixing two parents
-    static crossover(parent1, parent2) {
+    static crossover(parent1, parent2, tier = 3) {
         const childGenes = {};
 
         // For each gene, randomly pick from either parent
@@ -124,91 +109,47 @@ export class Genome {
                 : parent2.genes[gene];
         }
 
+        // Force locked genes to default
+        for (const def of getLockedGenes(tier)) {
+            childGenes[def.name] = def.defaultValue;
+        }
+
         return new Genome(childGenes);
     }
 
-    // Mutation: randomly tweak genes
-    mutate(mutationRate = 0.2) {
+    // Mutation: randomly tweak genes, respecting tier locks
+    mutate(mutationRate = 0.2, tier = 3) {
         const mutated = { ...this.genes };
 
-        // Each gene has a chance to mutate
-        if (Math.random() < mutationRate) {
-            // Mutate grid size (±3, clamped to 7-80)
-            mutated.gridSize = Math.max(7, Math.min(80,
-                mutated.gridSize + Math.floor((Math.random() - 0.5) * 6 + 0.5)
-            ));
-        }
-
-        if (Math.random() < mutationRate) {
-            // Mutate box count (±1, clamped to 2-15)
-            mutated.boxCount = Math.max(2, Math.min(15,
-                mutated.boxCount + (Math.random() < 0.5 ? -1 : 1)
-            ));
-        }
-
-        if (Math.random() < mutationRate) {
-            // Mutate complexity (±10, clamped to 20-200)
-            mutated.complexity = Math.max(20, Math.min(200,
-                mutated.complexity + Math.floor((Math.random() - 0.5) * 20 + 0.5)
-            ));
-        }
-
-        if (Math.random() < mutationRate) {
-            // Mutate wall density (±0.03, clamped to 0.02-0.3)
-            mutated.wallDensity = Math.max(0.02, Math.min(0.3,
-                mutated.wallDensity + (Math.random() - 0.5) * 0.06
-            ));
-        }
-
-        // Mutate style weights (each 20% chance, ±15, clamped 0-100)
-        for (const styleGene of ['styleClusters', 'styleMaze', 'styleCaves', 'styleClusteredRooms']) {
-            if (Math.random() < 0.2) {
-                mutated[styleGene] = Math.max(0, Math.min(100,
-                    mutated[styleGene] + Math.floor((Math.random() - 0.5) * 30 + 0.5)
-                ));
+        for (const def of GENE_REGISTRY) {
+            // Force locked genes to default — no mutation allowed
+            if (def.tier > tier) {
+                mutated[def.name] = def.defaultValue;
+                continue;
             }
-        }
 
-        // Mutate visual genes
-        if (Math.random() < mutationRate) {
-            // Palette: circular wrapping (±0.08)
-            mutated.palette = mutated.palette + (Math.random() - 0.5) * 0.16;
-            mutated.palette = mutated.palette - Math.floor(mutated.palette); // wrap to [0,1)
-        }
+            if (Math.random() >= def.mutationRate) continue;
 
-        if (Math.random() < mutationRate) {
-            // Tile style: clamped (±0.1)
-            mutated.tileStyle = Math.max(0, Math.min(1,
-                mutated.tileStyle + (Math.random() - 0.5) * 0.2
-            ));
-        }
-
-        if (Math.random() < mutationRate) {
-            // Decoration: clamped (±0.08)
-            mutated.decoration = Math.max(0, Math.min(1,
-                mutated.decoration + (Math.random() - 0.5) * 0.16
-            ));
-        }
-
-        // Mutate mechanic genes
-        if (Math.random() < mutationRate) {
-            mutated.collectibleDensity = Math.max(0, Math.min(1,
-                mutated.collectibleDensity + (Math.random() - 0.5) * 0.3
-            ));
-        }
-
-        if (Math.random() < 0.05) {
-            mutated.iceEnabled = mutated.iceEnabled ? 0 : 1;
-        }
-
-        if (Math.random() < mutationRate) {
-            mutated.iceDensity = Math.max(0, Math.min(1,
-                mutated.iceDensity + (Math.random() - 0.5) * 0.2
-            ));
-        }
-
-        if (Math.random() < 0.05) {
-            mutated.exitEnabled = mutated.exitEnabled ? 0 : 1;
+            switch (def.type) {
+                case 'int':
+                case 'weight':
+                    mutated[def.name] = Math.max(def.min, Math.min(def.max,
+                        mutated[def.name] + Math.floor((Math.random() - 0.5) * def.mutationDelta * 2 + 0.5)
+                    ));
+                    break;
+                case 'float':
+                    mutated[def.name] = Math.max(def.min, Math.min(def.max,
+                        mutated[def.name] + (Math.random() - 0.5) * def.mutationDelta * 2
+                    ));
+                    break;
+                case 'circular':
+                    mutated[def.name] = mutated[def.name] + (Math.random() - 0.5) * def.mutationDelta * 2;
+                    mutated[def.name] = mutated[def.name] - Math.floor(mutated[def.name]); // wrap to [0,1)
+                    break;
+                case 'binary':
+                    mutated[def.name] = mutated[def.name] ? 0 : 1;
+                    break;
+            }
         }
 
         return new Genome(mutated);
@@ -240,6 +181,7 @@ export class Genome {
         };
         if (this.genes.iceEnabled) info['Ice'] = `${(this.genes.iceDensity * 100).toFixed(0)}% density`;
         if (this.genes.exitEnabled) info['Exit'] = 'Enabled';
+        if (this.genes.spikeEnabled) info['Spikes'] = `${(this.genes.spikeDensity * 100).toFixed(0)}% density`;
         return info;
     }
 
@@ -271,7 +213,7 @@ export class Genome {
 
 // Population manager for genetic algorithm
 export class Population {
-    constructor(size = 10) {
+    constructor(size = 10, tier = 3) {
         this.genomes = [];
         this.generation = 0;
         this.history = [];
@@ -279,7 +221,7 @@ export class Population {
 
         // Initialize with random genomes, record as Gen 0
         for (let i = 0; i < size; i++) {
-            const g = new Genome();
+            const g = new Genome(Genome.randomGenes(tier));
             this.genomes.push(g);
             this.lineage.push({
                 id: g._id,
@@ -299,7 +241,7 @@ export class Population {
 
     // Evolve to next generation based on fitness scores
     // fitness is an array of numbers (one per genome, higher is better)
-    evolve(fitnessScores) {
+    evolve(fitnessScores, tier = 3) {
         if (fitnessScores.length !== this.genomes.length) {
             throw new Error('Fitness scores must match genome count');
         }
@@ -339,10 +281,10 @@ export class Population {
             const parent2 = parents[Math.floor(Math.random() * parents.length)];
 
             // Create child through crossover
-            const child = Genome.crossover(parent1, parent2);
+            const child = Genome.crossover(parent1, parent2, tier);
 
             // Mutate
-            const mutated = child.mutate(0.2);
+            const mutated = child.mutate(0.2, tier);
 
             nextGen.push(mutated);
             offspringRecords.push({
@@ -365,7 +307,7 @@ export class Population {
     }
 
     // Evolve from tournament winners (array of 5 winning Genome refs, may contain duplicates)
-    evolveFromWinners(winnerGenomes) {
+    evolveFromWinners(winnerGenomes, tier = 3) {
         // Record history entry
         this.history.push({
             generation: this.generation,
@@ -401,8 +343,8 @@ export class Population {
         while (nextGen.length < 4) {
             const parent1 = top3[Math.floor(Math.random() * top3.length)];
             const parent2 = top3[Math.floor(Math.random() * top3.length)];
-            const child = Genome.crossover(parent1, parent2);
-            const mutated = child.mutate(0.2);
+            const child = Genome.crossover(parent1, parent2, tier);
+            const mutated = child.mutate(0.2, tier);
             nextGen.push(mutated);
             offspringRecords.push({
                 genome: mutated,
@@ -411,8 +353,8 @@ export class Population {
             });
         }
 
-        // 1 fresh random genome (wild card)
-        const freshGenome = new Genome();
+        // 1 fresh random genome (wild card) — rolls all genes unlocked at current tier
+        const freshGenome = new Genome(Genome.randomGenes(tier));
         nextGen.push(freshGenome);
         offspringRecords.push({
             genome: freshGenome,
@@ -475,7 +417,8 @@ export class Population {
             gridSize: 0, boxCount: 0, complexity: 0, wallDensity: 0,
             styleClusters: 0, styleMaze: 0, styleCaves: 0, styleClusteredRooms: 0,
             palette: 0, tileStyle: 0, decoration: 0,
-            collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, exitEnabled: 0
+            collectibleDensity: 0, iceEnabled: 0, iceDensity: 0, exitEnabled: 0,
+            spikeEnabled: 0, spikeDensity: 0
         };
 
         for (const genome of this.genomes) {
@@ -495,6 +438,8 @@ export class Population {
             avgGenes.iceEnabled += g.iceEnabled || 0;
             avgGenes.iceDensity += g.iceDensity || 0;
             avgGenes.exitEnabled += g.exitEnabled || 0;
+            avgGenes.spikeEnabled += g.spikeEnabled || 0;
+            avgGenes.spikeDensity += g.spikeDensity || 0;
         }
 
         const count = this.genomes.length;
@@ -526,7 +471,9 @@ export class Population {
                 collectibleDensity: (avgGenes.collectibleDensity / count).toFixed(2),
                 icePercent: Math.round(avgGenes.iceEnabled / count * 100),
                 iceDensity: (avgGenes.iceDensity / count).toFixed(2),
-                exitPercent: Math.round(avgGenes.exitEnabled / count * 100)
+                exitPercent: Math.round(avgGenes.exitEnabled / count * 100),
+                spikePercent: Math.round(avgGenes.spikeEnabled / count * 100),
+                spikeDensity: (avgGenes.spikeDensity / count).toFixed(2)
             }
         };
     }
@@ -607,7 +554,9 @@ export class Bot {
             Math.round((genes.collectibleDensity || 0) * 10000) * 6337 +
             (genes.iceEnabled || 0) * 4523 +
             Math.round((genes.iceDensity || 0) * 10000) * 7129 +
-            (genes.exitEnabled || 0) * 5639
+            (genes.exitEnabled || 0) * 5639 +
+            (genes.spikeEnabled || 0) * 3847 +
+            Math.round((genes.spikeDensity || 0) * 10000) * 6263
         );
 
         // Use different bits for adjective vs name to decorrelate them
@@ -699,6 +648,10 @@ export class Bot {
 
         if (genes.exitEnabled) {
             traits.push('designs escape rooms');
+        }
+
+        if (genes.spikeEnabled && genes.spikeDensity > 0.1) {
+            traits.push('lays deadly traps');
         }
 
         // Return personality string
@@ -844,12 +797,15 @@ export class Bot {
         const iceDiff = Math.abs((myGenes.iceEnabled || 0) - (theirGenes.iceEnabled || 0));
         const iceDensityDiff = Math.abs((myGenes.iceDensity || 0) - (theirGenes.iceDensity || 0));
         const exitDiff = Math.abs((myGenes.exitEnabled || 0) - (theirGenes.exitEnabled || 0));
+        const spikeDiff = Math.abs((myGenes.spikeEnabled || 0) - (theirGenes.spikeEnabled || 0));
+        const spikeDensityDiff = Math.abs((myGenes.spikeDensity || 0) - (theirGenes.spikeDensity || 0)) / 0.25;
 
-        // Average over 15 dimensions
+        // Average over 17 dimensions
         const avgDiff = (gridDiff + boxDiff + complexDiff + densityDiff +
                          clustersDiff + mazeDiff + cavesDiff + roomsDiff +
                          paletteDiff + tileStyleDiff + decorationDiff +
-                         collectibleDiff + iceDiff + iceDensityDiff + exitDiff) / 15;
+                         collectibleDiff + iceDiff + iceDensityDiff + exitDiff +
+                         spikeDiff + spikeDensityDiff) / 17;
 
         // Convert to affinity score (1 = perfect match, 0 = completely different)
         const affinity = 1 - avgDiff;

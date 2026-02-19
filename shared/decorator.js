@@ -28,6 +28,11 @@ export function decorateLevel(level, genome) {
     if (genes.exitEnabled) {
         placeExit(level, safeTiles);
     }
+
+    // Place spikes if enabled
+    if (genes.spikeEnabled) {
+        placeSpikes(level, safeTiles, genes.spikeDensity || 0);
+    }
 }
 
 function getSafeTiles(level) {
@@ -91,6 +96,19 @@ function placeExit(level, safeTiles) {
     // Pick randomly from the farthest quarter
     const pickIdx = Math.floor(Math.random() * Math.max(1, Math.floor(available.length / 4)));
     level.overlays[available[pickIdx]] = TILES.EXIT;
+}
+
+function placeSpikes(level, safeTiles, density) {
+    if (density <= 0) return;
+
+    // Spikes on safe tiles not used by other overlays
+    const available = safeTiles.filter(i => level.overlays[i] === 0);
+    // Scale: density 0-0.25 maps to 0-20% of available tiles, minimum 1
+    const count = Math.max(1, Math.round(available.length * density * 0.8));
+
+    for (let i = 0; i < count && i < available.length; i++) {
+        level.overlays[available[i]] = TILES.SPIKES;
+    }
 }
 
 function shuffle(array) {

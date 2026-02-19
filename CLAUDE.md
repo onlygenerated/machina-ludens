@@ -15,13 +15,14 @@ No build step or dependencies. Open `index.html` in a browser (or use any static
 **Three-layer module structure** using vanilla ES modules (`<script type="module">`):
 
 - **`shared/`** — Domain logic, no DOM access. Designed to eventually work in both browser and server.
-  - `tiles.js` — `TILES` enum (FLOOR=0, WALL=1, TARGET=2, BOX=3, PLAYER=4, BOX_ON_TARGET=5). Single source of truth.
+  - `tiles.js` — `TILES` enum (FLOOR=0 through SPIKES=9). Single source of truth for tile types.
   - `generator.js` — `SokobanGenerator` class. Reverse-play algorithm (Taylor & Parberry 2011) with 4 style algorithms: random clusters, recursive subdivision (maze), organic caves (cellular automata), and BSP rooms with internal clusters. Weight-based dispatch selects primary algorithm, then optionally applies a secondary overlay. Includes connectivity enforcement, deadlock detection (corner + freeze), and progressive relaxation on generation failure.
-  - `genome.js` — `Genome`, `Population`, and `Bot` classes. Genome carries 11 genes: 4 structural (gridSize, boxCount, complexity, wallDensity), 4 style weights (styleClusters/Maze/Caves/ClusteredRooms), 3 visual (palette, tileStyle, decoration). Population implements selection (top 50%), crossover, mutation (20% rate), and elitism. Bot wraps a Genome with procedurally generated name/personality/colors/sprite and a curation system (affinity-based genome preference).
+  - `gene-registry.js` — `GENE_REGISTRY` array (17 gene definitions with tier, type, range, mutation params), `TIER_THRESHOLDS` (Primordial/Awakening/Flourishing at 0/50/150 DNA), and tier helper functions. Single source of truth for gene metadata.
+  - `genome.js` — `Genome`, `Population`, and `Bot` classes. Genome carries 17 genes across 3 tiers: Tier 1 (structural + style + visual + collectibles = 12), Tier 2 (ice + exit = 3), Tier 3 (spikes = 2). `randomGenes(tier)`, `crossover(p1, p2, tier)`, `mutate(rate, tier)` all respect tier gating. Population implements tournament selection, crossover, mutation, elitism, and wild card injection. Bot wraps a Genome with procedurally generated name/personality/colors/sprite and a curation system (affinity-based genome preference).
 
 - **`client/`** — Browser-only UI and game loop.
   - `main.js` — Entry point, creates `Game` instance and exposes it to `window.game` for HTML onclick handlers.
-  - `game.js` — `Game` class: canvas rendering, Sokoban movement/undo, keyboard/touch input, rating UI, breeding workflow, generation history, experiment save/load (JSON files), localStorage persistence. Also contains `resolveVisualTheme()` which maps genome visual genes to rendering parameters (colors, shapes, patterns).
+  - `game.js` — `Game` class: canvas rendering, Sokoban movement/undo, keyboard/touch input, breeding workflow, generation history, tier progression, vitality system, spike mechanics, death/extinction, experiment save/load (JSON files), localStorage persistence. Also contains `resolveVisualTheme()` which maps genome visual genes to rendering parameters (colors, shapes, patterns).
   - `levels.js` — 5 hardcoded tutorial levels.
 
 **Key data flow:** `Population` → random bot selected as curator → curator picks genome via affinity → `Bot.generateLevel()` → `Genome.createGenerator()` → `SokobanGenerator.generate()` → player rates → `Population.evolve(fitnessScores)` → next generation.
@@ -34,7 +35,7 @@ No build step or dependencies. Open `index.html` in a browser (or use any static
 - All grid operations use flat arrays indexed as `y * width + x`.
 - The `TILES` constants are used as raw integers in hot paths (e.g., `grid[nPos] !== 1` instead of `!== TILES.WALL` in `getPlayerReachable`).
 - Visual theme is derived from genome at render time — the genome is the single source of truth for both level structure and appearance.
-- Population state resets each page load by default (localStorage persistence code exists but is commented out in constructor).
+- Population, DNA bank, and vitality persist across page loads via localStorage.
 
 ## Docs
 

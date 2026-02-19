@@ -377,6 +377,85 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* === Tier display === */
+        #tier-display {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            font-size: 0.8em;
+            color: #4ECDC4;
+            letter-spacing: 0.05em;
+        }
+
+        #tier-bar {
+            width: 60px;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        #tier-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: #4ECDC4;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        /* === Damage flash === */
+        #damage-flash {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 50, 50, 0.35);
+            pointer-events: none;
+            z-index: 5;
+            border-radius: 2px;
+        }
+
+        @keyframes damageFlash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* === Tier-up notification === */
+        #tier-notification {
+            display: none;
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(78, 205, 196, 0.95);
+            color: #1a1a1a;
+            padding: 16px 32px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 1.3em;
+            z-index: 100;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(78, 205, 196, 0.4);
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            75% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        }
+
+        /* === Death screen === */
+        #death-screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
         /* === Mobile === */
         @media (max-width: 768px) {
             body {
@@ -427,6 +506,10 @@
             <div class="phase-step">Breed</div>
             <div class="phase-step">Observe</div>
             <div id="dna-bank" title="Total DNA collected">DNA: <span id="dna-bank-count">0</span></div>
+            <div id="tier-display" title="Current tier and progress">
+                <span id="tier-name">Primordial</span>
+                <div id="tier-bar"><div id="tier-bar-fill"></div></div>
+            </div>
         </div>
 
         <!-- Comparison view: 3 level preview cards -->
@@ -444,13 +527,14 @@
         <!-- Play view: expanded single level -->
         <div id="play-view">
             <div id="play-bot-name">-</div>
-            <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span> | <span id="dna-counter" style="color: #00e5ff;">DNA: <span id="dna-count">0</span></span></div>
+            <div id="play-info">Moves: <span id="move-count">0</span> | Pushes: <span id="push-count">0</span> | <span id="dna-counter" style="color: #00e5ff;">DNA: <span id="dna-count">0</span></span> | <span id="vitality-display" style="color: #ff6666; letter-spacing: 2px;">&#x2665;&#x2665;&#x2665;</span></div>
             <div style="position: relative; display: inline-block;">
                 <canvas id="canvas" width="480" height="480"></canvas>
                 <div id="loading-overlay">
                     <div class="spinner"></div>
                     <div style="margin-top: 12px;">Generating...</div>
                 </div>
+                <div id="damage-flash"></div>
             </div>
             <div id="win-message"></div>
             <div id="play-controls">
@@ -472,6 +556,16 @@
             </div>
             <button onclick="game.startNextCycle()">Continue</button>
         </div>
+
+        <!-- Death screen -->
+        <div id="death-screen">
+            <h2 style="color: #ff4444; font-size: 1.8em; margin-bottom: 10px;">Population Extinct</h2>
+            <p style="color: #888; margin-bottom: 20px;">All vitality lost. The civilization has fallen.</p>
+            <button onclick="game.restartAfterExtinction()" style="padding: 14px 32px; font-size: 1.1em; background: #4ECDC4; color: #1a1a1a; border: none; border-radius: 6px; font-weight: bold;">Begin Anew</button>
+        </div>
+
+        <!-- Tier-up notification -->
+        <div id="tier-notification"></div>
 
         <div id="touch-controls">
             <div class="dpad">
