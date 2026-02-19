@@ -9,6 +9,72 @@ import { TILES } from './tiles.js';
  */
 
 /**
+ * Quick reachability pre-screen for ice levels.
+ * Compares player reachability with and without ice sliding.
+ * If ice doesn't restrict reachability, the reverse-play solvability guarantee holds.
+ * @param {Object} level - { grid, overlays, width, height, playerX, playerY }
+ * @returns {{ restricted: boolean }}
+ */
+export function checkIceReachability(level) {
+    const puzzle = extractPuzzleData(level);
+    if (!puzzle) return { restricted: false };
+
+    const { walls, boxes, playerPos, iceTiles, teleporterMap, gates, doors, width, height } = puzzle;
+
+    if (!iceTiles || iceTiles.size === 0) return { restricted: false };
+
+    const boxSet = new Set(boxes);
+
+    // Reachability WITH ice (sliding physics)
+    const iceReachable = floodFill(playerPos, walls, boxSet, width, height, teleporterMap, gates, doors, iceTiles);
+
+    // Reachability WITHOUT ice (normal movement)
+    const normalReachable = floodFill(playerPos, walls, boxSet, width, height, teleporterMap, gates, doors, null);
+
+    // If any normally-reachable position is unreachable with ice, ice restricts movement
+    for (const pos of normalReachable) {
+        if (!iceReachable.has(pos)) {
+            return { restricted: true };
+        }
+    }
+
+    return { restricted: false };
+}
+
+/**
+ * Quick reachability pre-screen for gate levels.
+ * Compares player reachability with and without one-way gates.
+ * Gates should change routes, not make areas completely unreachable.
+ * @param {Object} level - { grid, overlays, width, height, playerX, playerY }
+ * @returns {{ restricted: boolean }}
+ */
+export function checkGateReachability(level) {
+    const puzzle = extractPuzzleData(level);
+    if (!puzzle) return { restricted: false };
+
+    const { walls, boxes, playerPos, iceTiles, teleporterMap, gates, doors, width, height } = puzzle;
+
+    if (!gates || gates.size === 0) return { restricted: false };
+
+    const boxSet = new Set(boxes);
+
+    // Reachability WITH gates (real constraints)
+    const gateReachable = floodFill(playerPos, walls, boxSet, width, height, teleporterMap, gates, doors, iceTiles);
+
+    // Reachability WITHOUT gates (no directional constraints)
+    const noGateReachable = floodFill(playerPos, walls, boxSet, width, height, teleporterMap, new Map(), doors, iceTiles);
+
+    // If any position reachable without gates is unreachable with gates, gates created a barrier
+    for (const pos of noGateReachable) {
+        if (!gateReachable.has(pos)) {
+            return { restricted: true };
+        }
+    }
+
+    return { restricted: false };
+}
+
+/**
  * Solve a level using BFS on push-states.
  * @param {Object} level - { grid, overlays, width, height, playerX, playerY }
  * @param {Object} options - { maxStates: 50000, boxIceEnabled: false }
@@ -30,7 +96,7 @@ export function solve(level, options = {}) {
 
     // Initial state
     const initialBoxSet = new Set(boxes);
-    const initialReachable = floodFill(playerPos, walls, initialBoxSet, width, height, teleporterMap, gates, doors);
+    const initialReachable = floodFill(playerPos, walls, initialBoxSet, width, height, teleporterMap, gates, doors, iceTiles);
     const initialCanonical = Math.min(...initialReachable);
     const initialBoxKey = [...initialBoxSet].sort((a, b) => a - b);
 
@@ -108,7 +174,7 @@ export function solve(level, options = {}) {
 
                 // Compute new reachable area
                 const newBoxSet = new Set(sortedBoxes);
-                const newReachable = floodFill(newPlayerPos, walls, newBoxSet, width, height, teleporterMap, gates, doors);
+                const newReachable = floodFill(newPlayerPos, walls, newBoxSet, width, height, teleporterMap, gates, doors, iceTiles);
                 const newCanonical = Math.min(...newReachable);
 
                 const key = stateKey(newCanonical, sortedBoxes);
@@ -204,9 +270,11 @@ function extractPuzzleData(level) {
 
 /**
  * BFS flood fill from startPos, blocked by walls and boxes.
+ * Models player-ice sliding: stepping onto ice continues in (dx,dy) until stopped.
+ * Only the stop position is added as reachable — intermediate ice tiles are not.
  * Returns Set of reachable positions.
  */
-function floodFill(startPos, walls, boxSet, width, height, teleporterMap, gates, doors) {
+function floodFill(startPos, walls, boxSet, width, height, teleporterMap, gates, doors, iceTiles) {
     const reachable = new Set([startPos]);
     const queue = [startPos];
     let head = 0;
@@ -223,14 +291,34 @@ function floodFill(startPos, walls, boxSet, width, height, teleporterMap, gates,
             const ny = cy + dy;
             if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
 
-            const n = cur + delta;
-            if (reachable.has(n) || walls.has(n) || boxSet.has(n)) continue;
+            let n = cur + delta;
+            if (walls.has(n) || boxSet.has(n)) continue;
 
             // Door check: treat locked doors as impassable
             if (doors && doors.has(n)) continue;
 
             // Gate check: can we enter this tile from direction (dx, dy)?
             if (gates && gates.has(n) && !gateAllowsDirection(gates.get(n), dx, dy)) continue;
+
+            // Ice slide: if stepping onto ice, simulate sliding in (dx, dy)
+            if (iceTiles && iceTiles.size > 0 && iceTiles.has(n)) {
+                let slidePos = n;
+                while (iceTiles.has(slidePos)) {
+                    const sx = slidePos % width;
+                    const sy = Math.floor(slidePos / width);
+                    const snx = sx + dx;
+                    const sny = sy + dy;
+                    if (snx < 0 || snx >= width || sny < 0 || sny >= height) break;
+                    const nextPos = sny * width + snx;
+                    if (walls.has(nextPos) || boxSet.has(nextPos)) break;
+                    if (doors && doors.has(nextPos)) break;
+                    if (gates && gates.has(nextPos) && !gateAllowsDirection(gates.get(nextPos), dx, dy)) break;
+                    slidePos = nextPos;
+                }
+                n = slidePos; // final stop position
+            }
+
+            if (reachable.has(n)) continue;
 
             reachable.add(n);
             queue.push(n);

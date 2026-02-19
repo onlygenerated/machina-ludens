@@ -1,7 +1,7 @@
 import { SokobanGenerator } from './generator.js';
 import { decorateLevel } from './decorator.js';
 import { GENE_REGISTRY, GENE_MAP, getLockedGenes } from './gene-registry.js';
-import { solve } from './solver.js';
+import { solve, checkIceReachability, checkGateReachability } from './solver.js';
 
 // Genome for Sokoban Level Generation
 // Represents the "DNA" of a level generator that can evolve through selection
@@ -120,30 +120,43 @@ export class Genome {
         const generator = this.createGenerator();
         const level = generator.generate();
 
-        // Box-ice levels need solver verification
-        if (this.genes.iceEnabled && this.genes.boxIceEnabled) {
-            return this._generateBoxIceLevel(level, generator);
+        // Ice levels need solver verification (ice can block push positions)
+        if (this.genes.iceEnabled) {
+            return this._generateIceVerifiedLevel(level, generator);
+        }
+
+        // Gate levels need reachability verification (gates can trap player)
+        if (this.genes.gateEnabled) {
+            return this._generateGateVerifiedLevel(level);
         }
 
         decorateLevel(level, this);
         return level;
     }
 
-    // Generate a solver-verified box-ice level
-    _generateBoxIceLevel(level, generator) {
-        // Large grids make solver BFS too expensive — skip verification
+    // Generate a solver-verified ice level (handles both regular ice and box-ice)
+    _generateIceVerifiedLevel(level, generator) {
+        // Large grids make solver BFS too expensive — skip ice verification
         // and just decorate normally (base level is solvable via reverse-play,
         // ice placement is sparse and rarely blocks all paths)
+        // But still check gates (cheap — 2 floodFills)
         if (this.genes.gridSize > 20) {
+            if (this.genes.gateEnabled) {
+                return this._generateGateVerifiedLevel(level);
+            }
             decorateLevel(level, this);
             return level;
         }
 
-        // Scale maxStates down for medium grids to keep generation snappy
+        const isBoxIce = !!this.genes.boxIceEnabled;
         const area = this.genes.gridSize * this.genes.gridSize;
-        const maxStates = area > 200 ? 10000 : 30000;
+
+        // Box-ice needs heavier solver; regular ice uses lighter settings
+        const maxSolverRuns = isBoxIce ? 5 : 2;
+        const maxStates = isBoxIce ? (area > 200 ? 10000 : 30000) : 5000;
 
         const maxAttempts = 5;
+        let solverRunCount = 0;
         let lastReason = '';
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -158,7 +171,30 @@ export class Genome {
             };
             decorateLevel(tryLevel, this);
 
-            const result = solve(tryLevel, { boxIceEnabled: true, maxStates });
+            // Gate pre-check: cheap (2 floodFills), skip expensive ice check if gates trap player
+            if (this.genes.gateEnabled) {
+                const gateResult = checkGateReachability(tryLevel);
+                if (gateResult.restricted) {
+                    console.log('[Genome] Gate restricted reachability, retrying decoration');
+                    continue;
+                }
+            }
+
+            // Tier 1: Quick reachability pre-screen (regular ice only)
+            if (!isBoxIce) {
+                const { restricted } = checkIceReachability(tryLevel);
+                if (!restricted) {
+                    console.log('[Genome] Ice pre-screen passed');
+                    return tryLevel;
+                }
+                console.log('[Genome] Ice restricted reachability, running solver');
+            }
+
+            // Tier 2: Full solver (skip if we've used up solver budget)
+            if (solverRunCount >= maxSolverRuns) continue;
+
+            const result = solve(tryLevel, { boxIceEnabled: isBoxIce, maxStates });
+            solverRunCount++;
 
             if (result.solvable) {
                 return tryLevel;
@@ -166,15 +202,44 @@ export class Genome {
 
             lastReason = result.reason;
 
-            // If solver hit state limit on last attempt, accept it (probably solvable, just complex)
-            if (attempt === maxAttempts - 1 && result.reason === 'exceeded_limit') {
+            // Accept exceeded_limit on last solver run (probably solvable, just complex)
+            if (solverRunCount >= maxSolverRuns && result.reason === 'exceeded_limit') {
                 return tryLevel;
             }
         }
 
-        // All attempts failed — fallback: decorate without box-ice
-        console.log(`[Genome] Box-ice solver failed (${lastReason}), falling back to ice-only`);
-        const fallbackGenome = { genes: { ...this.genes, boxIceEnabled: 0 } };
+        // All attempts failed — fallback: decorate without any ice
+        console.log(`[Genome] Ice solver failed (${lastReason}), falling back to no ice`);
+        const fallbackGenome = { genes: { ...this.genes, iceEnabled: 0, boxIceEnabled: 0 } };
+        decorateLevel(level, { genes: fallbackGenome.genes });
+        return level;
+    }
+
+    // Generate a gate-verified level (ensures gates don't trap the player)
+    _generateGateVerifiedLevel(level) {
+        const maxAttempts = 5;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const tryLevel = {
+                width: level.width,
+                height: level.height,
+                grid: [...level.grid],
+                playerX: level.playerX,
+                playerY: level.playerY,
+                solutionPath: level.solutionPath
+            };
+            decorateLevel(tryLevel, this);
+
+            const { restricted } = checkGateReachability(tryLevel);
+            if (!restricted) {
+                return tryLevel;
+            }
+            console.log('[Genome] Gate restricted reachability, retrying decoration');
+        }
+
+        // All attempts failed — fallback: decorate without gates
+        console.log('[Genome] Gate verification failed, falling back to no gates');
+        const fallbackGenome = { genes: { ...this.genes, gateEnabled: 0 } };
         decorateLevel(level, { genes: fallbackGenome.genes });
         return level;
     }
